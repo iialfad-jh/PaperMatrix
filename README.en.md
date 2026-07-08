@@ -1,0 +1,97 @@
+# PaperMatrix
+
+Language: [中文](README.md) | English
+
+PaperMatrix is a lightweight Python CLI for turning a local folder of PDF papers into a comparison matrix. It reads PDFs, cleans and chunks paper text, selects extraction-relevant chunks, asks an LLM for structured fields, and exports Markdown plus CSV.
+
+## Install
+
+Create a virtual environment in the project directory:
+
+```bash
+python -m venv .venv
+```
+
+Activate it and install the project:
+
+```bash
+.venv\Scripts\activate
+pip install -e .
+```
+
+## API Key
+
+Set `OPENAI_API_KEY` before running:
+
+```bash
+set OPENAI_API_KEY=your_api_key_here
+```
+
+PowerShell:
+
+```powershell
+$env:OPENAI_API_KEY="your_api_key_here"
+```
+
+For an OpenAI-compatible relay or proxy API, also set the base URL and API mode:
+
+```powershell
+$env:OPENAI_API_KEY="your_relay_api_key_here"
+$env:OPENAI_BASE_URL="https://api.dwai.cloud/v1"
+$env:OPENAI_API_MODE="responses"
+```
+
+You can also pass them per run:
+
+```powershell
+papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai.cloud/v1 --api-mode responses
+```
+
+## Usage
+
+The default output language is Chinese:
+
+```bash
+papermatrix ./papers --out matrix.md
+```
+
+For English matrix output:
+
+```bash
+papermatrix ./papers --out matrix.md --language en
+```
+
+Input:
+
+```text
+papers/
+  paper1.pdf
+  paper2.pdf
+```
+
+Output:
+
+```text
+matrix.md
+matrix.csv
+.papermatrix/
+  paper1_chunks.jsonl
+  paper1_extract.json
+```
+
+## Output Language
+
+`--language` controls the final Markdown/CSV column names, unknown labels, and page markers:
+
+- `zh`: default, uses Chinese headers such as `论文`, `研究问题`, and `方法`.
+- `en`: uses English headers such as `Paper`, `Problem`, and `Method`.
+
+In Chinese mode, the LLM is instructed to summarize extracted field values in Simplified Chinese when possible. Dataset names, metric names, model names, and other proper nouns may remain in their original form. Internal JSON still uses stable English keys for downstream processing.
+
+## Current Limits
+
+- Local PDF folders only.
+- No Web UI.
+- No arXiv, Zotero, chat QA, or table recognition.
+- Extraction only uses selected chunks from each paper.
+- Fields without explicit evidence are normalized to `unknown`; Chinese matrix output displays them as `未知`.

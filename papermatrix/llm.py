@@ -21,6 +21,25 @@ Extract:
 - result
 - limitation
 """
+LANGUAGE_ALIASES = {
+    "zh": "zh",
+    "cn": "zh",
+    "zh-cn": "zh",
+    "chinese": "zh",
+    "en": "en",
+    "english": "en",
+}
+LANGUAGE_OUTPUT_INSTRUCTIONS = {
+    "en": "Write extracted field values in English. Keep names of datasets, metrics, and methods as written when they are proper nouns.",
+    "zh": "除数据集、指标、模型名等专有名词可保留原文外，字段值请用简体中文概括。缺失字段必须仍然返回字符串 \"unknown\"。",
+}
+
+
+def normalize_language(language: str) -> str:
+    normalized = LANGUAGE_ALIASES.get(language.strip().lower())
+    if not normalized:
+        raise ValueError('language must be "zh" or "en"')
+    return normalized
 
 
 class LLMClient(Protocol):
@@ -35,6 +54,7 @@ class OpenAILLMClient:
         api_key: str | None = None,
         base_url: str | None = None,
         api_mode: str | None = None,
+        language: str = "zh",
     ) -> None:
         from openai import OpenAI
 
@@ -42,6 +62,7 @@ class OpenAILLMClient:
         self.api_mode = (api_mode or os.getenv("OPENAI_API_MODE") or "chat").lower()
         if self.api_mode not in {"chat", "responses"}:
             raise ValueError('api_mode must be "chat" or "responses"')
+        self.language = normalize_language(language)
 
         client_kwargs = {"api_key": api_key or os.getenv("OPENAI_API_KEY")}
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")
@@ -62,6 +83,7 @@ class OpenAILLMClient:
             "model": self.model,
             "api_mode": self.api_mode,
             "base_url": self.base_url or "OpenAI default",
+            "language": self.language,
         }
 
     def extract_json(self, paper_id: str, chunks: list[dict]) -> dict:
@@ -88,6 +110,7 @@ class OpenAILLMClient:
 
     def _build_user_content(self, payload: dict) -> str:
         return (
+            f"{LANGUAGE_OUTPUT_INSTRUCTIONS[self.language]}\n\n"
             "Return only one valid JSON object matching this shape: "
             '{"paper_id": str, "title": str, '
             '"problem": {"value": str, "evidence": [{"chunk_id": str, "pages": [int]}]}, '

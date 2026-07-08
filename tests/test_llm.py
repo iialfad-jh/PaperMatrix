@@ -79,6 +79,19 @@ def test_openai_client_uses_responses_api_when_selected(monkeypatch):
     assert fake_client.responses.calls[0]["model"] == "gpt-test"
     assert fake_client.responses.calls[0]["store"] is False
     assert fake_client.responses.calls[0]["max_output_tokens"] == 1200
+    assert "字段值请用简体中文概括" in fake_client.responses.calls[0]["input"]
     assert "instructions" not in fake_client.responses.calls[0]
     assert "temperature" not in fake_client.responses.calls[0]
     assert fake_client.chat.completions.calls == []
+
+
+def test_openai_client_can_request_english_output(monkeypatch):
+    install_fake_openai(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "relay-key")
+    monkeypatch.setenv("OPENAI_API_MODE", "responses")
+
+    client = OpenAILLMClient(model="gpt-test", language="en")
+    client.extract_json("paper", [])
+
+    input_text = FakeOpenAI.instances[0].responses.calls[0]["input"]
+    assert "Write extracted field values in English" in input_text
