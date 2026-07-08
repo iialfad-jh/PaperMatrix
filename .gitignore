@@ -1,0 +1,10 @@
+.venv/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+.pytest-tmp/
+.papermatrix/
+matrix.md
+matrix.csv
+papers/
+tests/test_api.py

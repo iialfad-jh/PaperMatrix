@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "papermatrix"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "typer",
+    "pymupdf",
+    "pydantic",
+    "pandas",
+    "openai"
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest"
+]
+
+[project.scripts]
+papermatrix = "papermatrix.cli:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["papermatrix*"]
