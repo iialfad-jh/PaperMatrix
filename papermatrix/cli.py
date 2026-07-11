@@ -6,7 +6,7 @@ import typer
 
 from .chunk import chunk_pages, save_chunks_jsonl
 from .export import export_matrix, normalize_language
-from .extract import extract_paper, save_extract_json
+from .extract import extract_paper, load_extract_json, save_extract_json
 from .llm import OpenAILLMClient
 from .pdf import read_pdf_pages
 from .selector import select_chunks_for_extraction
@@ -18,6 +18,7 @@ CLI_MESSAGES = {
     "en": {
         "config": "LLM config: {config}",
         "no_pdfs": "No PDF files found in {papers_dir}",
+        "using_cache": "Using cached extract for {filename}",
         "processing": "Processing {filename}...",
         "wrote": "Wrote {path}",
         "probe_succeeded": "Provider probe succeeded.",
@@ -30,6 +31,7 @@ CLI_MESSAGES = {
     "zh": {
         "config": "LLM 配置：{config}",
         "no_pdfs": "在 {papers_dir} 中没有找到 PDF 文件",
+        "using_cache": "使用缓存结果：{filename}",
         "processing": "正在处理 {filename}...",
         "wrote": "已写入 {path}",
         "probe_succeeded": "服务商探针请求成功。",
@@ -52,10 +54,11 @@ def main(
     out: Path = typer.Option(Path("matrix.md"), "--out", "-o", help="Markdown matrix output path."),
     max_chars: int = typer.Option(3500, help="Maximum characters per chunk."),
     max_chunks: int = typer.Option(12, help="Maximum chunks sent to the LLM per paper."),
-    model: str = typer.Option("gpt-4.1-mini", help="OpenAI model name."),
+    model: str | None = typer.Option(None, help="OpenAI model name. Defaults to PAPERMATRIX_MODEL, OPENAI_MODEL, then gpt-4.1-mini."),
     base_url: str | None = typer.Option(None, "--base-url", help="OpenAI-compatible API base URL."),
     api_mode: str | None = typer.Option(None, "--api-mode", help='API mode: "chat" or "responses".'),
     language: str = typer.Option("zh", "--language", "-l", help='Output language: "zh" or "en".'),
+    force: bool = typer.Option(False, "--force", help="Ignore cached extracts and rerun PDF extraction plus LLM calls."),
     debug_config: bool = typer.Option(False, "--debug-config", help="Print model/API configuration without revealing the API key."),
     provider_probe: bool = typer.Option(False, "--provider-probe", help="Send one tiny provider test request and exit."),
 ) -> None:
@@ -63,12 +66,20 @@ def main(
         output_language = normalize_language(language)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
-    llm_client = OpenAILLMClient(model=model, base_url=base_url, api_mode=api_mode, language=output_language)
+
+    llm_client: OpenAILLMClient | None = None
+
+    def get_llm_client() -> OpenAILLMClient:
+        nonlocal llm_client
+        if llm_client is None:
+            llm_client = OpenAILLMClient(model=model, base_url=base_url, api_mode=api_mode, language=output_language)
+        return llm_client
+
     if debug_config:
-        typer.echo(_message(output_language, "config", config=llm_client.config_summary()))
+        typer.echo(_message(output_language, "config", config=get_llm_client().config_summary()))
 
     if provider_probe:
-        _run_provider_probe(llm_client, language=output_language)
+        _run_provider_probe(get_llm_client(), language=output_language)
         return
 
     pdf_paths = sorted(papers_dir.glob("*.pdf"))
@@ -80,6 +91,12 @@ def main(
 
     for pdf_path in pdf_paths:
         paper_id = pdf_path.stem
+        extract_path = work_dir / f"{paper_id}_extract.json"
+        if extract_path.exists() and not force:
+            typer.echo(_message(output_language, "using_cache", filename=pdf_path.name))
+            extracts.append(load_extract_json(extract_path, paper_id=paper_id))
+            continue
+
         typer.echo(_message(output_language, "processing", filename=pdf_path.name))
 
         pages = read_pdf_pages(pdf_path)
@@ -88,13 +105,13 @@ def main(
 
         selected_chunks = select_chunks_for_extraction(chunks, max_chunks=max_chunks)
         try:
-            extract = extract_paper(paper_id, selected_chunks, llm_client)
+            extract = extract_paper(paper_id, selected_chunks, get_llm_client())
         except Exception as exc:
             if _is_provider_error(exc):
                 typer.echo(_format_provider_error(exc, language=output_language), err=True)
                 raise typer.Exit(1) from exc
             raise
-        save_extract_json(extract, work_dir / f"{paper_id}_extract.json")
+        save_extract_json(extract, extract_path)
         extracts.append(extract)
 
     markdown_path, csv_path = export_matrix(extracts, out, language=output_language)

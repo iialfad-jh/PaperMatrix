@@ -50,7 +50,7 @@ class LLMClient(Protocol):
 class OpenAILLMClient:
     def __init__(
         self,
-        model: str = "gpt-4.1-mini",
+        model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
         api_mode: str | None = None,
@@ -58,7 +58,7 @@ class OpenAILLMClient:
     ) -> None:
         from openai import OpenAI
 
-        self.model = model
+        self.model = model or os.getenv("PAPERMATRIX_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4.1-mini"
         self.api_mode = (api_mode or os.getenv("OPENAI_API_MODE") or "chat").lower()
         if self.api_mode not in {"chat", "responses"}:
             raise ValueError('api_mode must be "chat" or "responses"')

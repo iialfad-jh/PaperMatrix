@@ -24,6 +24,13 @@ def extract_paper(paper_id: str, selected_chunks: list[dict], llm_client: LLMCli
     return validate_extract(raw_extract, paper_id=paper_id)
 
 
+def load_extract_json(path: str | Path, paper_id: str) -> PaperExtract:
+    input_path = Path(path)
+    with input_path.open("r", encoding="utf-8") as file:
+        raw_extract = json.load(file)
+    return validate_extract(raw_extract, paper_id=paper_id)
+
+
 def save_extract_json(extract: PaperExtract, path: str | Path) -> None:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

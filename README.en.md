@@ -39,6 +39,7 @@ For an OpenAI-compatible relay or proxy API, also set the base URL and API mode:
 $env:OPENAI_API_KEY="your_relay_api_key_here"
 $env:OPENAI_BASE_URL="https://api.dwai.cloud/v1"
 $env:OPENAI_API_MODE="responses"
+$env:PAPERMATRIX_MODEL="gpt-5.5"
 ```
 
 You can also pass them per run:
@@ -77,6 +78,18 @@ matrix.csv
 .papermatrix/
   paper1_chunks.jsonl
   paper1_extract.json
+```
+
+On repeated runs, PaperMatrix reuses existing `.papermatrix/*_extract.json` files by default and skips PDF reading, chunking, and LLM calls for those papers:
+
+```bash
+papermatrix ./papers --out matrix.md
+```
+
+To ignore cached extracts and rerun extraction:
+
+```bash
+papermatrix ./papers --out matrix.md --force
 ```
 
 ## Output Language

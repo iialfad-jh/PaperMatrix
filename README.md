@@ -39,6 +39,7 @@ $env:OPENAI_API_KEY="your_api_key_here"
 $env:OPENAI_API_KEY="your_relay_api_key_here"
 $env:OPENAI_BASE_URL="https://api.dwai.cloud/v1"
 $env:OPENAI_API_MODE="responses"
+$env:PAPERMATRIX_MODEL="gpt-5.5"
 ```
 
 也可以在单次运行时传入：
@@ -77,6 +78,18 @@ matrix.csv
 .papermatrix/
   paper1_chunks.jsonl
   paper1_extract.json
+```
+
+再次运行时，如果 `.papermatrix/*_extract.json` 已存在，PaperMatrix 会默认复用缓存的抽取结果，跳过对应 PDF 的读取、切块和 LLM 调用：
+
+```bash
+papermatrix ./papers --out matrix.md
+```
+
+如果需要忽略缓存并重新抽取：
+
+```bash
+papermatrix ./papers --out matrix.md --force
 ```
 
 ## 输出语言

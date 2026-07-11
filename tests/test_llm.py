@@ -85,6 +85,18 @@ def test_openai_client_uses_responses_api_when_selected(monkeypatch):
     assert fake_client.chat.completions.calls == []
 
 
+def test_openai_client_reads_model_from_environment(monkeypatch):
+    install_fake_openai(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "relay-key")
+    monkeypatch.setenv("OPENAI_API_MODE", "responses")
+    monkeypatch.setenv("PAPERMATRIX_MODEL", "gpt-5.5")
+
+    client = OpenAILLMClient()
+    client.extract_json("paper", [])
+
+    assert FakeOpenAI.instances[0].responses.calls[0]["model"] == "gpt-5.5"
+
+
 def test_openai_client_can_request_english_output(monkeypatch):
     install_fake_openai(monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "relay-key")
