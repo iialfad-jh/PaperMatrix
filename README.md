@@ -75,10 +75,13 @@ papers/
 ```text
 matrix.md
 matrix.csv
+matrix.evidence.md
 .papermatrix/
   paper1_chunks.jsonl
   paper1_extract.json
 ```
+
+`matrix.evidence.md` 会列出每个非未知字段的抽取值、证据页码、chunk id 和本地原文摘录，方便快速复核 LLM 是否摘对。
 
 再次运行时，如果 `.papermatrix/*_extract.json` 已存在，PaperMatrix 会默认复用缓存的抽取结果，跳过对应 PDF 的读取、切块和 LLM 调用：
 

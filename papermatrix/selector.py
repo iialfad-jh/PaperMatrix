@@ -11,6 +11,33 @@ FIELD_KEYWORDS = {
     "result": ["result", "results", "outperform", "improve", "improvement", "achieve", "performance", "state-of-the-art", "sota"],
     "limitation": ["limitation", "limitations", "future work", "fail", "failure", "weakness", "cannot", "does not", "discussion"],
 }
+SECTION_HINTS = {
+    "problem": ["abstract", "introduction", "background", "motivation"],
+    "method": ["method", "methods", "methodology", "approach", "proposed method", "technical design", "model architecture"],
+    "dataset": ["dataset", "datasets", "data", "experimental setup", "experiment setup", "experiments", "evaluation"],
+    "metric": ["metrics", "evaluation metrics", "experimental setup", "experiment setup", "experiments", "evaluation"],
+    "result": ["results", "experimental results", "experiments", "evaluation", "discussion"],
+    "limitation": ["limitations", "limitation", "discussion", "conclusion", "conclusions", "future work"],
+}
+SECTION_BONUS = {
+    "problem": 3.0,
+    "method": 4.0,
+    "dataset": 3.5,
+    "metric": 3.5,
+    "result": 3.5,
+    "limitation": 4.0,
+}
+
+
+def _looks_like_section_heading(text: str, heading: str) -> bool:
+    escaped_heading = re.escape(heading)
+    numbered_prefix = r"(?:\d+(?:\.\d+)*|[ivxlcdm]+)\.?\s+"
+    heading_patterns = [
+        rf"^\s*(?:{numbered_prefix})?{escaped_heading}\b",
+        rf"\b{numbered_prefix}{escaped_heading}\b",
+        rf"\b(?:section|sec\.)\s+{numbered_prefix}{escaped_heading}\b",
+    ]
+    return any(re.search(pattern, text) for pattern in heading_patterns)
 
 
 def _is_references_chunk(chunk: dict) -> bool:
@@ -40,10 +67,17 @@ def _keyword_score(text: str, keywords: list[str]) -> float:
     return score
 
 
+def _section_score(text: str, field: str) -> float:
+    if any(_looks_like_section_heading(text, heading) for heading in SECTION_HINTS[field]):
+        return SECTION_BONUS[field]
+    return 0.0
+
+
 def _score_chunk(chunk: dict, field: str, index: int, total: int) -> float:
     text = str(chunk.get("text", "")).lower()
     position = index / max(total - 1, 1)
     score = _keyword_score(text, FIELD_KEYWORDS[field])
+    score += _section_score(text, field)
     score += _position_bonus(field, position)
     if _is_references_chunk(chunk):
         score -= 100.0

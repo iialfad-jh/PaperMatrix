@@ -46,6 +46,9 @@ def test_cli_reuses_cached_extract_without_reading_pdf_or_llm(tmp_path: Path, mo
     text = out.read_text(encoding="utf-8")
     assert "Cached Title" in text
     assert "cached problem [p.1]" in text
+    evidence_text = out.with_suffix(".evidence.md").read_text(encoding="utf-8")
+    assert "Cached Title" in evidence_text
+    assert "> Chunk text unavailable." in evidence_text
 
 
 def test_cli_force_ignores_cached_extract(tmp_path: Path, monkeypatch):
@@ -81,3 +84,6 @@ def test_cli_force_ignores_cached_extract(tmp_path: Path, monkeypatch):
     text = out.read_text(encoding="utf-8")
     assert "Fresh Title" in text
     assert "Cached Title" not in text
+    evidence_text = out.with_suffix(".evidence.md").read_text(encoding="utf-8")
+    assert "Fresh Title" in evidence_text
+    assert "> This paper proposes a cached-rerun method." in evidence_text

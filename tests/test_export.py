@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from papermatrix.export import export_markdown
+from papermatrix.export import export_evidence, export_markdown
 from papermatrix.schema import Evidence, ExtractedField, PaperExtract
 
 
@@ -43,3 +43,57 @@ def test_markdown_export_defaults_to_chinese(tmp_path: Path):
     assert "| 论文 | 研究问题 | 方法 | 数据集 | 评价指标 | 结果 | 局限 |" in text
     assert "提出矩阵抽取问题 [第1页, 第2页]" in text
     assert "未知" in text
+
+
+def test_evidence_export_includes_chunk_excerpt(tmp_path: Path):
+    extract = PaperExtract(
+        paper_id="paper1",
+        title="Paper One",
+        problem=ExtractedField(value="problem value", evidence=[Evidence(chunk_id="paper1_c0", pages=[1])]),
+        method=ExtractedField(value="unknown"),
+        dataset=ExtractedField(value="unknown"),
+        metric=ExtractedField(value="unknown"),
+        result=ExtractedField(value="unknown"),
+        limitation=ExtractedField(value="unknown"),
+    )
+    chunks_by_paper = {
+        "paper1": [
+            {
+                "chunk_id": "paper1_c0",
+                "paper_id": "paper1",
+                "pages": [1],
+                "text": "This source sentence supports the extracted problem value.",
+            }
+        ]
+    }
+
+    output = tmp_path / "matrix.evidence.md"
+    export_evidence([extract], output, chunks_by_paper=chunks_by_paper, language="en")
+
+    text = output.read_text(encoding="utf-8")
+    assert "# Evidence" in text
+    assert "## Paper One" in text
+    assert "### Problem" in text
+    assert "**Value:** problem value" in text
+    assert "- **chunk:** `paper1_c0`; **pages:** p.1" in text
+    assert "> This source sentence supports the extracted problem value." in text
+
+
+def test_evidence_export_marks_missing_chunk_text(tmp_path: Path):
+    extract = PaperExtract(
+        paper_id="paper1",
+        title="Paper One",
+        problem=ExtractedField(value="problem value", evidence=[Evidence(chunk_id="paper1_c0", pages=[1])]),
+        method=ExtractedField(value="unknown"),
+        dataset=ExtractedField(value="unknown"),
+        metric=ExtractedField(value="unknown"),
+        result=ExtractedField(value="unknown"),
+        limitation=ExtractedField(value="unknown"),
+    )
+
+    output = tmp_path / "matrix.evidence.md"
+    export_evidence([extract], output, chunks_by_paper={}, language="en")
+
+    text = output.read_text(encoding="utf-8")
+    assert "- **chunk:** `paper1_c0`; **pages:** p.1" in text
+    assert "> Chunk text unavailable." in text

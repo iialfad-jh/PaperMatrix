@@ -1,4 +1,6 @@
-from papermatrix.chunk import chunk_pages
+from pathlib import Path
+
+from papermatrix.chunk import chunk_pages, load_chunks_jsonl, save_chunks_jsonl
 
 
 def test_chunk_split_preserves_page_numbers():
@@ -13,3 +15,15 @@ def test_chunk_split_preserves_page_numbers():
     assert chunks[0]["pages"] == [1, 2]
     assert chunks[1]["pages"] == [3]
     assert chunks[0]["chunk_id"] == "paper1_c0"
+
+
+def test_chunks_jsonl_round_trip(tmp_path: Path):
+    chunks = [
+        {"chunk_id": "paper1_c0", "paper_id": "paper1", "pages": [1], "text": "first chunk"},
+        {"chunk_id": "paper1_c1", "paper_id": "paper1", "pages": [2], "text": "second chunk"},
+    ]
+    path = tmp_path / "paper1_chunks.jsonl"
+
+    save_chunks_jsonl(chunks, path)
+
+    assert load_chunks_jsonl(path) == chunks

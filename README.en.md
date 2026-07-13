@@ -75,10 +75,13 @@ Output:
 ```text
 matrix.md
 matrix.csv
+matrix.evidence.md
 .papermatrix/
   paper1_chunks.jsonl
   paper1_extract.json
 ```
+
+`matrix.evidence.md` lists each non-unknown field value, evidence pages, chunk id, and a local source excerpt so you can quickly check whether the LLM extracted the right information.
 
 On repeated runs, PaperMatrix reuses existing `.papermatrix/*_extract.json` files by default and skips PDF reading, chunking, and LLM calls for those papers:
 

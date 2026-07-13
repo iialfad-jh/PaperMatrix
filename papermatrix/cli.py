@@ -4,8 +4,8 @@ from pathlib import Path
 
 import typer
 
-from .chunk import chunk_pages, save_chunks_jsonl
-from .export import export_matrix, normalize_language
+from .chunk import chunk_pages, load_chunks_jsonl, save_chunks_jsonl
+from .export import export_evidence, export_matrix, normalize_language
 from .extract import extract_paper, load_extract_json, save_extract_json
 from .llm import OpenAILLMClient
 from .pdf import read_pdf_pages
@@ -88,20 +88,25 @@ def main(
 
     work_dir = out.parent / ".papermatrix"
     extracts = []
+    chunks_by_paper = {}
 
     for pdf_path in pdf_paths:
         paper_id = pdf_path.stem
         extract_path = work_dir / f"{paper_id}_extract.json"
+        chunks_path = work_dir / f"{paper_id}_chunks.jsonl"
         if extract_path.exists() and not force:
             typer.echo(_message(output_language, "using_cache", filename=pdf_path.name))
-            extracts.append(load_extract_json(extract_path, paper_id=paper_id))
+            extract = load_extract_json(extract_path, paper_id=paper_id)
+            if chunks_path.exists():
+                chunks_by_paper[extract.paper_id] = load_chunks_jsonl(chunks_path)
+            extracts.append(extract)
             continue
 
         typer.echo(_message(output_language, "processing", filename=pdf_path.name))
 
         pages = read_pdf_pages(pdf_path)
         chunks = chunk_pages(pages, paper_id=paper_id, max_chars=max_chars)
-        save_chunks_jsonl(chunks, work_dir / f"{paper_id}_chunks.jsonl")
+        save_chunks_jsonl(chunks, chunks_path)
 
         selected_chunks = select_chunks_for_extraction(chunks, max_chunks=max_chunks)
         try:
@@ -112,11 +117,15 @@ def main(
                 raise typer.Exit(1) from exc
             raise
         save_extract_json(extract, extract_path)
+        chunks_by_paper[extract.paper_id] = chunks
         extracts.append(extract)
 
     markdown_path, csv_path = export_matrix(extracts, out, language=output_language)
+    evidence_path = out.with_suffix(".evidence.md")
+    export_evidence(extracts, evidence_path, chunks_by_paper=chunks_by_paper, language=output_language)
     typer.echo(_message(output_language, "wrote", path=markdown_path))
     typer.echo(_message(output_language, "wrote", path=csv_path))
+    typer.echo(_message(output_language, "wrote", path=evidence_path))
 
 
 def _is_provider_error(exc: Exception) -> bool:

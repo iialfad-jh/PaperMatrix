@@ -63,3 +63,13 @@ def save_chunks_jsonl(chunks: list[dict], path: str | Path) -> None:
     with output_path.open("w", encoding="utf-8") as file:
         for chunk in chunks:
             file.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+
+
+def load_chunks_jsonl(path: str | Path) -> list[dict]:
+    input_path = Path(path)
+    chunks = []
+    with input_path.open("r", encoding="utf-8") as file:
+        for line in file:
+            if line.strip():
+                chunks.append(json.loads(line))
+    return chunks

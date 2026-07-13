@@ -17,3 +17,18 @@ def test_selector_picks_dataset_metric_result_chunks():
     assert "paper_c6" in selected_ids
     assert "paper_c8" in selected_ids
     assert "paper_c10" in selected_ids
+
+
+def test_selector_uses_section_headings_as_relevance_signals():
+    chunks = [
+        {"chunk_id": f"paper_c{i}", "paper_id": "paper", "pages": [i + 1], "text": f"neutral section {i}"}
+        for i in range(16)
+    ]
+    chunks[7]["text"] = "3 Technical Design We align early images with future observations before synthesis."
+    chunks[8]["text"] = "4 Experimental Setup Images were captured weekly across cultivars and seasons."
+
+    selected = select_chunks_for_extraction(chunks, max_chunks=5)
+    selected_ids = {chunk["chunk_id"] for chunk in selected}
+
+    assert "paper_c7" in selected_ids
+    assert "paper_c8" in selected_ids
