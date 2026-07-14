@@ -33,6 +33,7 @@ LANGUAGE_OUTPUT_INSTRUCTIONS = {
     "en": "Write extracted field values in English. Keep names of datasets, metrics, and methods as written when they are proper nouns.",
     "zh": "除数据集、指标、模型名等专有名词可保留原文外，字段值请用简体中文概括。缺失字段必须仍然返回字符串 \"unknown\"。",
 }
+DEFAULT_MODEL = "gpt-4.1-mini"
 
 
 def normalize_language(language: str) -> str:
@@ -40,6 +41,23 @@ def normalize_language(language: str) -> str:
     if not normalized:
         raise ValueError('language must be "zh" or "en"')
     return normalized
+
+
+def resolve_openai_config(
+    model: str | None = None,
+    base_url: str | None = None,
+    api_mode: str | None = None,
+    language: str = "zh",
+) -> dict[str, str]:
+    resolved_api_mode = (api_mode or os.getenv("OPENAI_API_MODE") or "chat").lower()
+    if resolved_api_mode not in {"chat", "responses"}:
+        raise ValueError('api_mode must be "chat" or "responses"')
+    return {
+        "model": model or os.getenv("PAPERMATRIX_MODEL") or os.getenv("OPENAI_MODEL") or DEFAULT_MODEL,
+        "api_mode": resolved_api_mode,
+        "base_url": base_url or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE") or "",
+        "language": normalize_language(language),
+    }
 
 
 class LLMClient(Protocol):
@@ -58,14 +76,13 @@ class OpenAILLMClient:
     ) -> None:
         from openai import OpenAI
 
-        self.model = model or os.getenv("PAPERMATRIX_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4.1-mini"
-        self.api_mode = (api_mode or os.getenv("OPENAI_API_MODE") or "chat").lower()
-        if self.api_mode not in {"chat", "responses"}:
-            raise ValueError('api_mode must be "chat" or "responses"')
-        self.language = normalize_language(language)
+        config = resolve_openai_config(model=model, base_url=base_url, api_mode=api_mode, language=language)
+        self.model = config["model"]
+        self.api_mode = config["api_mode"]
+        self.language = config["language"]
 
         client_kwargs = {"api_key": api_key or os.getenv("OPENAI_API_KEY")}
-        self.base_url = base_url or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")
+        self.base_url = config["base_url"]
         if self.base_url:
             client_kwargs["base_url"] = self.base_url
             client_kwargs["default_headers"] = {

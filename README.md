@@ -79,11 +79,12 @@ matrix.evidence.md
 .papermatrix/
   paper1_chunks.jsonl
   paper1_extract.json
+  paper1_meta.json
 ```
 
 `matrix.evidence.md` 会列出每个非未知字段的抽取值、证据页码、chunk id 和本地原文摘录，方便快速复核 LLM 是否摘对。
 
-再次运行时，如果 `.papermatrix/*_extract.json` 已存在，PaperMatrix 会默认复用缓存的抽取结果，跳过对应 PDF 的读取、切块和 LLM 调用：
+再次运行时，如果 `.papermatrix/*_extract.json` 和 `.papermatrix/*_meta.json` 已存在且元数据匹配，PaperMatrix 会默认复用缓存的抽取结果，跳过对应 PDF 的读取、切块和 LLM 调用。元数据会检查 PDF 文件名、大小、修改时间、输出语言、模型、API 模式、base URL、`--max-chars` 和 `--max-chunks`：
 
 ```bash
 papermatrix ./papers --out matrix.md

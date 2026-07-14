@@ -4,10 +4,11 @@ from pathlib import Path
 
 import typer
 
+from .cache import build_cache_metadata, is_cache_metadata_current, load_cache_metadata, save_cache_metadata
 from .chunk import chunk_pages, load_chunks_jsonl, save_chunks_jsonl
 from .export import export_evidence, export_matrix, normalize_language
 from .extract import extract_paper, load_extract_json, save_extract_json
-from .llm import OpenAILLMClient
+from .llm import OpenAILLMClient, resolve_openai_config
 from .pdf import read_pdf_pages
 from .selector import select_chunks_for_extraction
 
@@ -19,6 +20,7 @@ CLI_MESSAGES = {
         "config": "LLM config: {config}",
         "no_pdfs": "No PDF files found in {papers_dir}",
         "using_cache": "Using cached extract for {filename}",
+        "cache_stale": "Cache metadata changed; rerunning {filename}...",
         "processing": "Processing {filename}...",
         "wrote": "Wrote {path}",
         "probe_succeeded": "Provider probe succeeded.",
@@ -32,6 +34,7 @@ CLI_MESSAGES = {
         "config": "LLM 配置：{config}",
         "no_pdfs": "在 {papers_dir} 中没有找到 PDF 文件",
         "using_cache": "使用缓存结果：{filename}",
+        "cache_stale": "缓存元数据已变化，重新处理 {filename}...",
         "processing": "正在处理 {filename}...",
         "wrote": "已写入 {path}",
         "probe_succeeded": "服务商探针请求成功。",
@@ -66,13 +69,22 @@ def main(
         output_language = normalize_language(language)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    try:
+        llm_config = resolve_openai_config(model=model, base_url=base_url, api_mode=api_mode, language=output_language)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     llm_client: OpenAILLMClient | None = None
 
     def get_llm_client() -> OpenAILLMClient:
         nonlocal llm_client
         if llm_client is None:
-            llm_client = OpenAILLMClient(model=model, base_url=base_url, api_mode=api_mode, language=output_language)
+            llm_client = OpenAILLMClient(
+                model=llm_config["model"],
+                base_url=llm_config["base_url"] or None,
+                api_mode=llm_config["api_mode"],
+                language=output_language,
+            )
         return llm_client
 
     if debug_config:
@@ -94,13 +106,25 @@ def main(
         paper_id = pdf_path.stem
         extract_path = work_dir / f"{paper_id}_extract.json"
         chunks_path = work_dir / f"{paper_id}_chunks.jsonl"
-        if extract_path.exists() and not force:
+        metadata_path = work_dir / f"{paper_id}_meta.json"
+        current_metadata = build_cache_metadata(
+            pdf_path,
+            language=output_language,
+            llm_config=llm_config,
+            max_chars=max_chars,
+            max_chunks=max_chunks,
+        )
+        cache_is_current = is_cache_metadata_current(load_cache_metadata(metadata_path), current_metadata)
+
+        if extract_path.exists() and not force and cache_is_current:
             typer.echo(_message(output_language, "using_cache", filename=pdf_path.name))
             extract = load_extract_json(extract_path, paper_id=paper_id)
             if chunks_path.exists():
                 chunks_by_paper[extract.paper_id] = load_chunks_jsonl(chunks_path)
             extracts.append(extract)
             continue
+        if extract_path.exists() and not force:
+            typer.echo(_message(output_language, "cache_stale", filename=pdf_path.name))
 
         typer.echo(_message(output_language, "processing", filename=pdf_path.name))
 
@@ -117,6 +141,7 @@ def main(
                 raise typer.Exit(1) from exc
             raise
         save_extract_json(extract, extract_path)
+        save_cache_metadata(current_metadata, metadata_path)
         chunks_by_paper[extract.paper_id] = chunks
         extracts.append(extract)
 
