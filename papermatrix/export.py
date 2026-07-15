@@ -52,6 +52,31 @@ EVIDENCE_LABELS = {
         "missing_excerpt": "无法找到片段原文。",
     },
 }
+EVIDENCE_KEYWORDS = {
+    "problem": ["problem", "challenge", "task", "aim", "goal", "motivation", "need", "address"],
+    "method": ["method", "approach", "framework", "architecture", "model", "propose", "introduce", "algorithm", "train"],
+    "dataset": ["dataset", "datasets", "benchmark", "corpus", "data", "images", "samples", "collected"],
+    "metric": ["metric", "metrics", "accuracy", "f1", "precision", "recall", "auc", "score", "fid", "mae", "r2"],
+    "result": ["result", "results", "outperform", "improve", "achieve", "performance", "significant", "better", "lower", "higher"],
+    "limitation": ["limitation", "limitations", "future work", "fail", "failure", "weakness", "cannot", "does not", "challenge"],
+}
+VALUE_STOPWORDS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "from",
+    "into",
+    "using",
+    "used",
+    "based",
+    "paper",
+    "method",
+    "model",
+    "result",
+}
 
 
 def normalize_language(language: str) -> str:
@@ -92,6 +117,78 @@ def _short_excerpt(text: str, max_chars: int) -> str:
     if split_at < max_chars // 2:
         split_at = max_chars
     return excerpt[:split_at].rstrip() + "..."
+
+
+def _split_sentences(text: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return []
+    return [sentence.strip() for sentence in re.split(r"(?<=[.!?。！？])\s+", normalized) if sentence.strip()]
+
+
+def _value_terms(value: str) -> list[str]:
+    terms = []
+    seen = set()
+    for term in re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{2,}|\d+(?:\.\d+)?", value.lower()):
+        if term in VALUE_STOPWORDS or term in seen:
+            continue
+        seen.add(term)
+        terms.append(term)
+    return terms[:20]
+
+
+def _sentence_score(sentence: str, field_name: str, field_value: str) -> float:
+    text = sentence.lower()
+    score = 0.0
+    for keyword in EVIDENCE_KEYWORDS[field_name]:
+        matches = re.findall(re.escape(keyword), text)
+        if matches:
+            score += 2.0 + min(len(matches), 3)
+    for term in _value_terms(field_value):
+        if term in text:
+            score += 1.5
+    if field_name in {"metric", "result"} and re.search(r"\d", sentence):
+        score += 1.5
+    if field_name == "result" and re.search(r"\b(?:better|higher|lower|improv\w*|outperform\w*|achiev\w*)\b", text):
+        score += 1.5
+    if len(sentence) < 25:
+        score -= 0.5
+    return score
+
+
+def _evidence_excerpt(
+    text: str,
+    field_name: str,
+    field_value: str,
+    max_chars: int,
+    max_sentences: int = 3,
+) -> str:
+    sentences = _split_sentences(text)
+    if not sentences:
+        return ""
+
+    scored = [
+        (_sentence_score(sentence, field_name, field_value), index, sentence)
+        for index, sentence in enumerate(sentences)
+    ]
+    selected = sorted(
+        [item for item in sorted(scored, key=lambda item: (item[0], -item[1]), reverse=True)[:max_sentences] if item[0] > 0],
+        key=lambda item: item[1],
+    )
+    if not selected:
+        return _short_excerpt(text, max_chars)
+
+    excerpt_lines = []
+    current_chars = 0
+    for _score, _index, sentence in selected:
+        next_len = len(sentence) + (1 if excerpt_lines else 0)
+        if excerpt_lines and current_chars + next_len > max_chars:
+            break
+        if not excerpt_lines and len(sentence) > max_chars:
+            return _short_excerpt(sentence, max_chars)
+        excerpt_lines.append(sentence)
+        current_chars += next_len
+    return "\n".join(excerpt_lines)
 
 
 def _quote_markdown(text: str) -> list[str]:
@@ -175,7 +272,11 @@ def export_evidence(
                     f"**{labels['pages']}:** {_format_pages(evidence.pages, language)}"
                 )
                 chunk = chunk_index.get(evidence.chunk_id)
-                excerpt = _short_excerpt(str(chunk.get("text", "")), excerpt_chars) if chunk else ""
+                excerpt = (
+                    _evidence_excerpt(str(chunk.get("text", "")), field_name, field.value, excerpt_chars)
+                    if chunk
+                    else ""
+                )
                 lines.extend(["", f"{labels['excerpt']}:", ""])
                 if excerpt:
                     lines.extend(_quote_markdown(excerpt))

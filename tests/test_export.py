@@ -79,6 +79,42 @@ def test_evidence_export_includes_chunk_excerpt(tmp_path: Path):
     assert "> This source sentence supports the extracted problem value." in text
 
 
+def test_evidence_export_selects_relevant_sentences(tmp_path: Path):
+    extract = PaperExtract(
+        paper_id="paper1",
+        title="Paper One",
+        problem=ExtractedField(value="unknown"),
+        method=ExtractedField(value="conditional GAN framework", evidence=[Evidence(chunk_id="paper1_c0", pages=[2])]),
+        dataset=ExtractedField(value="unknown"),
+        metric=ExtractedField(value="unknown"),
+        result=ExtractedField(value="unknown"),
+        limitation=ExtractedField(value="unknown"),
+    )
+    chunks_by_paper = {
+        "paper1": [
+            {
+                "chunk_id": "paper1_c0",
+                "paper_id": "paper1",
+                "pages": [2],
+                "text": (
+                    "Plant growth is difficult to observe at scale. "
+                    "We propose a conditional GAN framework for future image prediction. "
+                    "The model takes early images and treatment conditions as input. "
+                    "The appendix lists unrelated camera settings."
+                ),
+            }
+        ]
+    }
+
+    output = tmp_path / "matrix.evidence.md"
+    export_evidence([extract], output, chunks_by_paper=chunks_by_paper, language="en")
+
+    text = output.read_text(encoding="utf-8")
+    assert "> Plant growth is difficult to observe at scale." not in text
+    assert "> We propose a conditional GAN framework for future image prediction." in text
+    assert "> The model takes early images and treatment conditions as input." in text
+
+
 def test_evidence_export_marks_missing_chunk_text(tmp_path: Path):
     extract = PaperExtract(
         paper_id="paper1",
