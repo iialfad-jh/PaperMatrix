@@ -10,6 +10,7 @@ from .export import export_evidence, export_matrix, normalize_language
 from .extract import extract_paper, load_extract_json, save_extract_json
 from .llm import OpenAILLMClient, resolve_openai_config
 from .pdf import read_pdf_pages
+from .schema import parse_field_names
 from .selector import select_chunks_for_extraction
 
 
@@ -29,6 +30,7 @@ CLI_MESSAGES = {
         "type": "type={error_type}",
         "code": "code={code}",
         "message": "message={message}",
+        "fields": "Fields: {fields}",
     },
     "zh": {
         "config": "LLM 配置：{config}",
@@ -43,6 +45,7 @@ CLI_MESSAGES = {
         "type": "类型={error_type}",
         "code": "代码={code}",
         "message": "消息={message}",
+        "fields": "字段：{fields}",
     },
 }
 
@@ -61,12 +64,17 @@ def main(
     base_url: str | None = typer.Option(None, "--base-url", help="OpenAI-compatible API base URL."),
     api_mode: str | None = typer.Option(None, "--api-mode", help='API mode: "chat" or "responses".'),
     language: str = typer.Option("zh", "--language", "-l", help='Output language: "zh" or "en".'),
+    fields: str | None = typer.Option(None, "--fields", help="Comma-separated extraction fields. Example: problem,method,input,output,result"),
     force: bool = typer.Option(False, "--force", help="Ignore cached extracts and rerun PDF extraction plus LLM calls."),
     debug_config: bool = typer.Option(False, "--debug-config", help="Print model/API configuration without revealing the API key."),
     provider_probe: bool = typer.Option(False, "--provider-probe", help="Send one tiny provider test request and exit."),
 ) -> None:
     try:
         output_language = normalize_language(language)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    try:
+        field_names = parse_field_names(fields)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     try:
@@ -89,6 +97,7 @@ def main(
 
     if debug_config:
         typer.echo(_message(output_language, "config", config=get_llm_client().config_summary()))
+        typer.echo(_message(output_language, "fields", fields=", ".join(field_names)))
 
     if provider_probe:
         _run_provider_probe(get_llm_client(), language=output_language)
@@ -113,12 +122,13 @@ def main(
             llm_config=llm_config,
             max_chars=max_chars,
             max_chunks=max_chunks,
+            field_names=field_names,
         )
         cache_is_current = is_cache_metadata_current(load_cache_metadata(metadata_path), current_metadata)
 
         if extract_path.exists() and not force and cache_is_current:
             typer.echo(_message(output_language, "using_cache", filename=pdf_path.name))
-            extract = load_extract_json(extract_path, paper_id=paper_id)
+            extract = load_extract_json(extract_path, paper_id=paper_id, field_names=field_names)
             if chunks_path.exists():
                 chunks_by_paper[extract.paper_id] = load_chunks_jsonl(chunks_path)
             extracts.append(extract)
@@ -132,9 +142,9 @@ def main(
         chunks = chunk_pages(pages, paper_id=paper_id, max_chars=max_chars)
         save_chunks_jsonl(chunks, chunks_path)
 
-        selected_chunks = select_chunks_for_extraction(chunks, max_chunks=max_chunks)
+        selected_chunks = select_chunks_for_extraction(chunks, max_chunks=max_chunks, field_names=field_names)
         try:
-            extract = extract_paper(paper_id, selected_chunks, get_llm_client())
+            extract = extract_paper(paper_id, selected_chunks, get_llm_client(), field_names=field_names)
         except Exception as exc:
             if _is_provider_error(exc):
                 typer.echo(_format_provider_error(exc, language=output_language), err=True)
@@ -145,9 +155,9 @@ def main(
         chunks_by_paper[extract.paper_id] = chunks
         extracts.append(extract)
 
-    markdown_path, csv_path = export_matrix(extracts, out, language=output_language)
+    markdown_path, csv_path = export_matrix(extracts, out, language=output_language, field_names=field_names)
     evidence_path = out.with_suffix(".evidence.md")
-    export_evidence(extracts, evidence_path, chunks_by_paper=chunks_by_paper, language=output_language)
+    export_evidence(extracts, evidence_path, chunks_by_paper=chunks_by_paper, language=output_language, field_names=field_names)
     typer.echo(_message(output_language, "wrote", path=markdown_path))
     typer.echo(_message(output_language, "wrote", path=csv_path))
     typer.echo(_message(output_language, "wrote", path=evidence_path))

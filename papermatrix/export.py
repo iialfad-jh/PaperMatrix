@@ -4,10 +4,10 @@ import csv
 import re
 from pathlib import Path
 
-from .schema import ExtractedField, PaperExtract
+from .schema import DEFAULT_FIELD_NAMES, ExtractedField, PaperExtract, field_label
 
 
-FIELD_ORDER = ["problem", "method", "dataset", "metric", "result", "limitation"]
+FIELD_ORDER = list(DEFAULT_FIELD_NAMES)
 LANGUAGE_ALIASES = {
     "zh": "zh",
     "cn": "zh",
@@ -17,8 +17,8 @@ LANGUAGE_ALIASES = {
     "english": "en",
 }
 MATRIX_COLUMNS = {
-    "en": ["Paper", "Problem", "Method", "Dataset", "Metric", "Result", "Limitation"],
-    "zh": ["论文", "研究问题", "方法", "数据集", "评价指标", "结果", "局限"],
+    "en": ["Paper"] + [field_label(field_name, "en") for field_name in FIELD_ORDER],
+    "zh": ["论文"] + [field_label(field_name, "zh") for field_name in FIELD_ORDER],
 }
 UNKNOWN_LABELS = {
     "en": "unknown",
@@ -103,6 +103,13 @@ def format_field(field: ExtractedField, language: str = "zh") -> str:
     return f"{field.value} [{page_text}]"
 
 
+def matrix_columns(field_names: list[str] | None = None, language: str = "zh") -> list[str]:
+    language = normalize_language(language)
+    field_names = field_names or list(DEFAULT_FIELD_NAMES)
+    paper_column = "Paper" if language == "en" else "论文"
+    return [paper_column] + [field_label(field_name, language) for field_name in field_names]
+
+
 def _format_pages(pages: list[int], language: str) -> str:
     if not pages:
         return UNKNOWN_LABELS[language]
@@ -140,7 +147,8 @@ def _value_terms(value: str) -> list[str]:
 def _sentence_score(sentence: str, field_name: str, field_value: str) -> float:
     text = sentence.lower()
     score = 0.0
-    for keyword in EVIDENCE_KEYWORDS[field_name]:
+    keywords = EVIDENCE_KEYWORDS.get(field_name) or _value_terms(field_name)
+    for keyword in keywords:
         matches = re.findall(re.escape(keyword), text)
         if matches:
             score += 2.0 + min(len(matches), 3)
@@ -197,21 +205,28 @@ def _quote_markdown(text: str) -> list[str]:
     return [f"> {line}" for line in text.splitlines()]
 
 
-def extract_to_row(extract: PaperExtract, language: str = "zh") -> dict[str, str]:
+def extract_to_row(extract: PaperExtract, language: str = "zh", field_names: list[str] | None = None) -> dict[str, str]:
     language = normalize_language(language)
-    columns = MATRIX_COLUMNS[language]
+    field_names = field_names or list(DEFAULT_FIELD_NAMES)
+    columns = matrix_columns(field_names=field_names, language=language)
     row = {columns[0]: extract.title or extract.paper_id}
-    for column, field_name in zip(columns[1:], FIELD_ORDER):
-        row[column] = format_field(getattr(extract, field_name), language=language)
+    for column, field_name in zip(columns[1:], field_names):
+        row[column] = format_field(extract.get_field(field_name), language=language)
     return row
 
 
-def export_markdown(extracts: list[PaperExtract], path: str | Path, language: str = "zh") -> None:
+def export_markdown(
+    extracts: list[PaperExtract],
+    path: str | Path,
+    language: str = "zh",
+    field_names: list[str] | None = None,
+) -> None:
     language = normalize_language(language)
-    columns = MATRIX_COLUMNS[language]
+    field_names = field_names or list(DEFAULT_FIELD_NAMES)
+    columns = matrix_columns(field_names=field_names, language=language)
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [extract_to_row(extract, language=language) for extract in extracts]
+    rows = [extract_to_row(extract, language=language, field_names=field_names) for extract in extracts]
 
     lines = [
         "| " + " | ".join(columns) + " |",
@@ -223,12 +238,18 @@ def export_markdown(extracts: list[PaperExtract], path: str | Path, language: st
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def export_csv(extracts: list[PaperExtract], path: str | Path, language: str = "zh") -> None:
+def export_csv(
+    extracts: list[PaperExtract],
+    path: str | Path,
+    language: str = "zh",
+    field_names: list[str] | None = None,
+) -> None:
     language = normalize_language(language)
-    columns = MATRIX_COLUMNS[language]
+    field_names = field_names or list(DEFAULT_FIELD_NAMES)
+    columns = matrix_columns(field_names=field_names, language=language)
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [extract_to_row(extract, language=language) for extract in extracts]
+    rows = [extract_to_row(extract, language=language, field_names=field_names) for extract in extracts]
     with output_path.open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=columns)
         writer.writeheader()
@@ -241,10 +262,12 @@ def export_evidence(
     chunks_by_paper: dict[str, list[dict]] | None = None,
     language: str = "zh",
     excerpt_chars: int = 700,
+    field_names: list[str] | None = None,
 ) -> None:
     language = normalize_language(language)
+    field_names = field_names or list(DEFAULT_FIELD_NAMES)
     labels = EVIDENCE_LABELS[language]
-    columns = MATRIX_COLUMNS[language]
+    columns = matrix_columns(field_names=field_names, language=language)
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     chunk_indexes = {
@@ -256,12 +279,12 @@ def export_evidence(
     for extract in extracts:
         lines.extend([f"## {extract.title or extract.paper_id}", ""])
         chunk_index = chunk_indexes.get(extract.paper_id, {})
-        for field_name, field_label in zip(FIELD_ORDER, columns[1:]):
-            field = getattr(extract, field_name)
+        for field_name, column_label in zip(field_names, columns[1:]):
+            field = extract.get_field(field_name)
             if field.value == "unknown" and not field.evidence:
                 continue
 
-            lines.extend([f"### {field_label}", "", f"**{labels['value']}:** {field.value}", ""])
+            lines.extend([f"### {column_label}", "", f"**{labels['value']}:** {field.value}", ""])
             if not field.evidence:
                 continue
 
@@ -287,9 +310,14 @@ def export_evidence(
     output_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
-def export_matrix(extracts: list[PaperExtract], markdown_path: str | Path, language: str = "zh") -> tuple[Path, Path]:
+def export_matrix(
+    extracts: list[PaperExtract],
+    markdown_path: str | Path,
+    language: str = "zh",
+    field_names: list[str] | None = None,
+) -> tuple[Path, Path]:
     md_path = Path(markdown_path)
     csv_path = md_path.with_suffix(".csv")
-    export_markdown(extracts, md_path, language=language)
-    export_csv(extracts, csv_path, language=language)
+    export_markdown(extracts, md_path, language=language, field_names=field_names)
+    export_csv(extracts, csv_path, language=language, field_names=field_names)
     return md_path, csv_path

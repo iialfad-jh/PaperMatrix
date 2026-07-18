@@ -107,3 +107,18 @@ def test_openai_client_can_request_english_output(monkeypatch):
 
     input_text = FakeOpenAI.instances[0].responses.calls[0]["input"]
     assert "Write extracted field values in English" in input_text
+
+
+def test_openai_client_includes_custom_fields_in_prompt(monkeypatch):
+    install_fake_openai(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "relay-key")
+    monkeypatch.setenv("OPENAI_API_MODE", "responses")
+
+    client = OpenAILLMClient(model="gpt-test", language="en")
+    client.extract_json("paper", [], field_names=["input", "output"])
+
+    input_text = FakeOpenAI.instances[0].responses.calls[0]["input"]
+    assert "- input" in input_text
+    assert "- output" in input_text
+    assert '"fields": {"input":' in input_text
+    assert '"output":' in input_text

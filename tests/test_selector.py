@@ -32,3 +32,18 @@ def test_selector_uses_section_headings_as_relevance_signals():
 
     assert "paper_c7" in selected_ids
     assert "paper_c8" in selected_ids
+
+
+def test_selector_uses_custom_field_names_as_keywords():
+    chunks = [
+        {"chunk_id": f"paper_c{i}", "paper_id": "paper", "pages": [i + 1], "text": f"neutral section {i}"}
+        for i in range(14)
+    ]
+    chunks[6]["text"] = "The model input contains early side-view images and treatment metadata."
+    chunks[9]["text"] = "The output is a predicted future canopy image."
+
+    selected = select_chunks_for_extraction(chunks, max_chunks=5, field_names=["input", "output"])
+    selected_ids = {chunk["chunk_id"] for chunk in selected}
+
+    assert "paper_c6" in selected_ids
+    assert "paper_c9" in selected_ids

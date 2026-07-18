@@ -2,7 +2,7 @@
 
 Language: [中文](README.md) | English
 
-PaperMatrix is a lightweight Python CLI for turning a local folder of PDF papers into a comparison matrix. It reads PDFs, cleans and chunks paper text, selects extraction-relevant chunks, asks an LLM for structured fields, and exports Markdown plus CSV.
+PaperMatrix is a lightweight Python CLI for turning a local folder of PDF papers into a comparison matrix. It reads PDFs, cleans and chunks paper text, selects extraction-relevant chunks, asks an LLM for structured fields, and exports Markdown, CSV, and evidence files.
 
 ## Install
 
@@ -62,6 +62,14 @@ For English matrix output:
 papermatrix ./papers --out matrix.md --language en
 ```
 
+To customize matrix columns, pass comma-separated field names:
+
+```bash
+papermatrix ./papers --out matrix.md --fields problem,method,input,output,dataset,result
+```
+
+Field names are used as internal JSON keys, so use English letters, numbers, and underscores, such as `model_input`, `crop_species`, and `future_output`. The default fields remain `problem,method,dataset,metric,result,limitation`.
+
 Input:
 
 ```text
@@ -84,7 +92,7 @@ matrix.evidence.md
 
 `matrix.evidence.md` lists each non-unknown field value, evidence pages, chunk id, and the most relevant local source sentences so you can quickly check whether the LLM extracted the right information.
 
-On repeated runs, PaperMatrix reuses existing `.papermatrix/*_extract.json` and `.papermatrix/*_meta.json` files when the metadata still matches, then skips PDF reading, chunking, and LLM calls for those papers. Metadata checks the PDF name, size, modification time, output language, model, API mode, base URL, `--max-chars`, and `--max-chunks`:
+On repeated runs, PaperMatrix reuses existing `.papermatrix/*_extract.json` and `.papermatrix/*_meta.json` files when the metadata still matches, then skips PDF reading, chunking, and LLM calls for those papers. Metadata checks the PDF name, size, modification time, output language, model, API mode, base URL, `--max-chars`, `--max-chunks`, and extraction fields:
 
 ```bash
 papermatrix ./papers --out matrix.md

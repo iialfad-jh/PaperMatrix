@@ -45,6 +45,25 @@ def test_markdown_export_defaults_to_chinese(tmp_path: Path):
     assert "未知" in text
 
 
+def test_markdown_export_supports_custom_fields(tmp_path: Path):
+    extract = PaperExtract(
+        paper_id="paper1",
+        title="Paper One",
+        fields={
+            "input": ExtractedField(value="early images", evidence=[Evidence(chunk_id="paper1_c0", pages=[1])]),
+            "output": ExtractedField(value="future canopy image", evidence=[Evidence(chunk_id="paper1_c1", pages=[2])]),
+        },
+    )
+
+    output = tmp_path / "matrix.md"
+    export_markdown([extract], output, language="en", field_names=["input", "output"])
+
+    text = output.read_text(encoding="utf-8")
+    assert "| Paper | Input | Output |" in text
+    assert "early images [p.1]" in text
+    assert "future canopy image [p.2]" in text
+
+
 def test_evidence_export_includes_chunk_excerpt(tmp_path: Path):
     extract = PaperExtract(
         paper_id="paper1",

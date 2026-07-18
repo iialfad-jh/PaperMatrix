@@ -2,7 +2,7 @@
 
 语言：中文 | [English](README.en.md)
 
-PaperMatrix 是一个轻量级 Python 命令行工具，用于把本地 PDF 论文文件夹转换成论文对比矩阵。它会读取 PDF、清洗并切块文本、选择和抽取最相关的片段、调用 LLM 生成结构化字段，最后导出 Markdown 和 CSV。
+PaperMatrix 是一个轻量级 Python 命令行工具，用于把本地 PDF 论文文件夹转换成论文对比矩阵。它会读取 PDF、清洗并切块文本、选择和抽取最相关的片段、调用 LLM 生成结构化字段，最后导出 Markdown、CSV 和证据文件。
 
 ## 安装
 
@@ -62,6 +62,14 @@ papermatrix ./papers --out matrix.md
 papermatrix ./papers --out matrix.md --language en
 ```
 
+如果需要自定义矩阵列，可以用逗号传入字段名：
+
+```bash
+papermatrix ./papers --out matrix.md --fields problem,method,input,output,dataset,result
+```
+
+字段名会作为内部 JSON key 使用，请使用英文字母、数字和下划线，例如 `model_input`、`crop_species`、`future_output`。默认字段仍然是 `problem,method,dataset,metric,result,limitation`。
+
 输入：
 
 ```text
@@ -84,7 +92,7 @@ matrix.evidence.md
 
 `matrix.evidence.md` 会列出每个非未知字段的抽取值、证据页码、chunk id 和最相关的本地原文句子，方便快速复核 LLM 是否摘对。
 
-再次运行时，如果 `.papermatrix/*_extract.json` 和 `.papermatrix/*_meta.json` 已存在且元数据匹配，PaperMatrix 会默认复用缓存的抽取结果，跳过对应 PDF 的读取、切块和 LLM 调用。元数据会检查 PDF 文件名、大小、修改时间、输出语言、模型、API 模式、base URL、`--max-chars` 和 `--max-chunks`：
+再次运行时，如果 `.papermatrix/*_extract.json` 和 `.papermatrix/*_meta.json` 已存在且元数据匹配，PaperMatrix 会默认复用缓存的抽取结果，跳过对应 PDF 的读取、切块和 LLM 调用。元数据会检查 PDF 文件名、大小、修改时间、输出语言、模型、API 模式、base URL、`--max-chars`、`--max-chunks` 和抽取字段：
 
 ```bash
 papermatrix ./papers --out matrix.md

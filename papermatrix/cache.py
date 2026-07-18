@@ -14,6 +14,7 @@ def build_cache_metadata(
     llm_config: dict[str, str],
     max_chars: int,
     max_chunks: int,
+    field_names: list[str],
 ) -> dict:
     path = Path(pdf_path)
     stat = path.stat()
@@ -35,6 +36,7 @@ def build_cache_metadata(
             "max_chars": max_chars,
             "max_chunks": max_chunks,
         },
+        "fields": field_names,
     }
 
 

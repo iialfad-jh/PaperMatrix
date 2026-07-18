@@ -25,7 +25,13 @@ def make_extract(title: str, problem: str) -> PaperExtract:
     )
 
 
-def save_matching_metadata(pdf_path: Path, out: Path, language: str = "en") -> None:
+def save_matching_metadata(
+    pdf_path: Path,
+    out: Path,
+    language: str = "en",
+    field_names: list[str] | None = None,
+) -> None:
+    field_names = field_names or ["problem", "method", "dataset", "metric", "result", "limitation"]
     save_cache_metadata(
         build_cache_metadata(
             pdf_path,
@@ -33,6 +39,7 @@ def save_matching_metadata(pdf_path: Path, out: Path, language: str = "en") -> N
             llm_config=resolve_openai_config(language=language),
             max_chars=3500,
             max_chunks=12,
+            field_names=field_names,
         ),
         out.parent / ".papermatrix" / f"{pdf_path.stem}_meta.json",
     )
@@ -86,8 +93,8 @@ def test_cli_reruns_when_cache_metadata_differs(tmp_path: Path, monkeypatch):
         calls.append("pdf")
         return [{"page": 1, "text": "This paper proposes a metadata-aware cache."}]
 
-    def fake_extract_paper(paper_id, selected_chunks, llm_client):
-        calls.append(("extract", paper_id, selected_chunks, llm_client.__class__.__name__))
+    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None):
+        calls.append(("extract", paper_id, selected_chunks, llm_client.__class__.__name__, field_names))
         return make_extract("Fresh Title", "fresh problem")
 
     monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
@@ -106,6 +113,48 @@ def test_cli_reruns_when_cache_metadata_differs(tmp_path: Path, monkeypatch):
     assert metadata["language"] == "en"
 
 
+def test_cli_uses_custom_fields(tmp_path: Path, monkeypatch):
+    papers_dir = tmp_path / "papers"
+    papers_dir.mkdir()
+    pdf_path = papers_dir / "paper.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "matrix.md"
+    calls = []
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            calls.append("llm")
+
+    def fake_read_pdf_pages(_path):
+        calls.append("pdf")
+        return [{"page": 1, "text": "The input uses early images and the output is a future canopy image."}]
+
+    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None):
+        calls.append(("extract", field_names))
+        return PaperExtract(
+            paper_id=paper_id,
+            title="Custom Paper",
+            fields={
+                "input": ExtractedField(value="early images", evidence=[Evidence(chunk_id="paper_c0", pages=[1])]),
+                "output": ExtractedField(value="future canopy image", evidence=[Evidence(chunk_id="paper_c0", pages=[1])]),
+            },
+        )
+
+    monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
+    monkeypatch.setattr(cli, "read_pdf_pages", fake_read_pdf_pages)
+    monkeypatch.setattr(cli, "extract_paper", fake_extract_paper)
+
+    result = runner.invoke(cli.app, [str(papers_dir), "--out", str(out), "--language", "en", "--fields", "input,output"])
+
+    assert result.exit_code == 0, result.output
+    assert calls[2] == ("extract", ["input", "output"])
+    text = out.read_text(encoding="utf-8")
+    assert "| Paper | Input | Output |" in text
+    assert "early images [p.1]" in text
+    metadata = load_cache_metadata(tmp_path / ".papermatrix" / "paper_meta.json")
+    assert metadata["fields"] == ["input", "output"]
+
+
 def test_cli_force_ignores_cached_extract(tmp_path: Path, monkeypatch):
     papers_dir = tmp_path / "papers"
     papers_dir.mkdir()
@@ -122,8 +171,8 @@ def test_cli_force_ignores_cached_extract(tmp_path: Path, monkeypatch):
         calls.append("pdf")
         return [{"page": 1, "text": "This paper proposes a cached-rerun method."}]
 
-    def fake_extract_paper(paper_id, selected_chunks, llm_client):
-        calls.append(("extract", paper_id, selected_chunks, llm_client.__class__.__name__))
+    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None):
+        calls.append(("extract", paper_id, selected_chunks, llm_client.__class__.__name__, field_names))
         return make_extract("Fresh Title", "fresh problem")
 
     monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
