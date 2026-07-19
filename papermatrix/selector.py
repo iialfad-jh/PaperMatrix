@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .schema import DEFAULT_FIELD_NAMES
+from .schema import DEFAULT_FIELD_NAMES, FieldSpec
 
 
 FIELD_KEYWORDS = {
@@ -59,10 +59,22 @@ def _position_bonus(field: str, position: float) -> float:
     return 0.0
 
 
-def _field_keywords(field: str) -> list[str]:
+def _find_field_spec(field: str, field_specs: list[FieldSpec] | None = None) -> FieldSpec | None:
+    for field_spec in field_specs or []:
+        if field_spec.name == field:
+            return field_spec
+    return None
+
+
+def _field_keywords(field: str, field_specs: list[FieldSpec] | None = None) -> list[str]:
+    keywords = []
     if field in FIELD_KEYWORDS:
-        return FIELD_KEYWORDS[field]
-    return [part for part in re.split(r"[_\W]+", field.lower()) if part]
+        keywords.extend(FIELD_KEYWORDS[field])
+    field_spec = _find_field_spec(field, field_specs)
+    if field_spec:
+        keywords.extend(field_spec.keywords)
+    keywords.extend(part for part in re.split(r"[_\W]+", field.lower()) if part)
+    return list(dict.fromkeys(keyword for keyword in keywords if keyword))
 
 
 def _keyword_score(text: str, keywords: list[str]) -> float:
@@ -81,10 +93,16 @@ def _section_score(text: str, field: str) -> float:
     return 0.0
 
 
-def _score_chunk(chunk: dict, field: str, index: int, total: int) -> float:
+def _score_chunk(
+    chunk: dict,
+    field: str,
+    index: int,
+    total: int,
+    field_specs: list[FieldSpec] | None = None,
+) -> float:
     text = str(chunk.get("text", "")).lower()
     position = index / max(total - 1, 1)
-    score = _keyword_score(text, _field_keywords(field))
+    score = _keyword_score(text, _field_keywords(field, field_specs=field_specs))
     score += _section_score(text, field)
     score += _position_bonus(field, position)
     if _is_references_chunk(chunk):
@@ -97,18 +115,19 @@ def select_chunks_for_extraction(
     top_k_per_field: int = 2,
     max_chunks: int = 12,
     field_names: list[str] | None = None,
+    field_specs: list[FieldSpec] | None = None,
 ) -> list[dict]:
     if len(chunks) <= max_chunks:
         return chunks
 
     selected_indexes: set[int] = set(range(min(2, len(chunks))))
     total = len(chunks)
-    field_names = field_names or list(DEFAULT_FIELD_NAMES)
+    field_names = field_names or [field_spec.name for field_spec in field_specs or []] or list(DEFAULT_FIELD_NAMES)
 
     for field in field_names:
         ranked = sorted(
             range(total),
-            key=lambda idx: (_score_chunk(chunks[idx], field, idx, total), -idx),
+            key=lambda idx: (_score_chunk(chunks[idx], field, idx, total, field_specs=field_specs), -idx),
             reverse=True,
         )
         selected_indexes.update(ranked[:top_k_per_field])
@@ -129,7 +148,7 @@ def select_chunks_for_extraction(
             ordered_indexes,
             key=lambda idx: (
                 idx in must_keep,
-                max(_score_chunk(chunks[idx], field, idx, total) for field in field_names),
+                max(_score_chunk(chunks[idx], field, idx, total, field_specs=field_specs) for field in field_names),
             ),
             reverse=True,
         )

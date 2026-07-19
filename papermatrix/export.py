@@ -4,7 +4,7 @@ import csv
 import re
 from pathlib import Path
 
-from .schema import DEFAULT_FIELD_NAMES, ExtractedField, PaperExtract, field_label
+from .schema import DEFAULT_FIELD_NAMES, ExtractedField, FieldSpec, PaperExtract, field_label, field_specs_from_names
 
 
 FIELD_ORDER = list(DEFAULT_FIELD_NAMES)
@@ -103,11 +103,22 @@ def format_field(field: ExtractedField, language: str = "zh") -> str:
     return f"{field.value} [{page_text}]"
 
 
-def matrix_columns(field_names: list[str] | None = None, language: str = "zh") -> list[str]:
+def _resolve_field_specs(
+    field_names: list[str] | None = None,
+    field_specs: list[FieldSpec] | None = None,
+) -> list[FieldSpec]:
+    return field_specs or field_specs_from_names(field_names or list(DEFAULT_FIELD_NAMES))
+
+
+def matrix_columns(
+    field_names: list[str] | None = None,
+    language: str = "zh",
+    field_specs: list[FieldSpec] | None = None,
+) -> list[str]:
     language = normalize_language(language)
-    field_names = field_names or list(DEFAULT_FIELD_NAMES)
+    field_specs = _resolve_field_specs(field_names=field_names, field_specs=field_specs)
     paper_column = "Paper" if language == "en" else "论文"
-    return [paper_column] + [field_label(field_name, language) for field_name in field_names]
+    return [paper_column] + [field_label(field_spec.name, language, field_specs=field_specs) for field_spec in field_specs]
 
 
 def _format_pages(pages: list[int], language: str) -> str:
@@ -144,10 +155,19 @@ def _value_terms(value: str) -> list[str]:
     return terms[:20]
 
 
-def _sentence_score(sentence: str, field_name: str, field_value: str) -> float:
+def _sentence_score(
+    sentence: str,
+    field_name: str,
+    field_value: str,
+    field_spec: FieldSpec | None = None,
+) -> float:
     text = sentence.lower()
     score = 0.0
-    keywords = EVIDENCE_KEYWORDS.get(field_name) or _value_terms(field_name)
+    keywords = []
+    keywords.extend(EVIDENCE_KEYWORDS.get(field_name, []))
+    if field_spec:
+        keywords.extend(field_spec.keywords)
+    keywords.extend(_value_terms(field_name))
     for keyword in keywords:
         matches = re.findall(re.escape(keyword), text)
         if matches:
@@ -170,13 +190,14 @@ def _evidence_excerpt(
     field_value: str,
     max_chars: int,
     max_sentences: int = 3,
+    field_spec: FieldSpec | None = None,
 ) -> str:
     sentences = _split_sentences(text)
     if not sentences:
         return ""
 
     scored = [
-        (_sentence_score(sentence, field_name, field_value), index, sentence)
+        (_sentence_score(sentence, field_name, field_value, field_spec=field_spec), index, sentence)
         for index, sentence in enumerate(sentences)
     ]
     selected = sorted(
@@ -205,10 +226,16 @@ def _quote_markdown(text: str) -> list[str]:
     return [f"> {line}" for line in text.splitlines()]
 
 
-def extract_to_row(extract: PaperExtract, language: str = "zh", field_names: list[str] | None = None) -> dict[str, str]:
+def extract_to_row(
+    extract: PaperExtract,
+    language: str = "zh",
+    field_names: list[str] | None = None,
+    field_specs: list[FieldSpec] | None = None,
+) -> dict[str, str]:
     language = normalize_language(language)
-    field_names = field_names or list(DEFAULT_FIELD_NAMES)
-    columns = matrix_columns(field_names=field_names, language=language)
+    field_specs = _resolve_field_specs(field_names=field_names, field_specs=field_specs)
+    field_names = [field_spec.name for field_spec in field_specs]
+    columns = matrix_columns(field_names=field_names, language=language, field_specs=field_specs)
     row = {columns[0]: extract.title or extract.paper_id}
     for column, field_name in zip(columns[1:], field_names):
         row[column] = format_field(extract.get_field(field_name), language=language)
@@ -220,13 +247,18 @@ def export_markdown(
     path: str | Path,
     language: str = "zh",
     field_names: list[str] | None = None,
+    field_specs: list[FieldSpec] | None = None,
 ) -> None:
     language = normalize_language(language)
-    field_names = field_names or list(DEFAULT_FIELD_NAMES)
-    columns = matrix_columns(field_names=field_names, language=language)
+    field_specs = _resolve_field_specs(field_names=field_names, field_specs=field_specs)
+    field_names = [field_spec.name for field_spec in field_specs]
+    columns = matrix_columns(field_names=field_names, language=language, field_specs=field_specs)
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [extract_to_row(extract, language=language, field_names=field_names) for extract in extracts]
+    rows = [
+        extract_to_row(extract, language=language, field_names=field_names, field_specs=field_specs)
+        for extract in extracts
+    ]
 
     lines = [
         "| " + " | ".join(columns) + " |",
@@ -243,13 +275,18 @@ def export_csv(
     path: str | Path,
     language: str = "zh",
     field_names: list[str] | None = None,
+    field_specs: list[FieldSpec] | None = None,
 ) -> None:
     language = normalize_language(language)
-    field_names = field_names or list(DEFAULT_FIELD_NAMES)
-    columns = matrix_columns(field_names=field_names, language=language)
+    field_specs = _resolve_field_specs(field_names=field_names, field_specs=field_specs)
+    field_names = [field_spec.name for field_spec in field_specs]
+    columns = matrix_columns(field_names=field_names, language=language, field_specs=field_specs)
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [extract_to_row(extract, language=language, field_names=field_names) for extract in extracts]
+    rows = [
+        extract_to_row(extract, language=language, field_names=field_names, field_specs=field_specs)
+        for extract in extracts
+    ]
     with output_path.open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=columns)
         writer.writeheader()
@@ -263,11 +300,14 @@ def export_evidence(
     language: str = "zh",
     excerpt_chars: int = 700,
     field_names: list[str] | None = None,
+    field_specs: list[FieldSpec] | None = None,
 ) -> None:
     language = normalize_language(language)
-    field_names = field_names or list(DEFAULT_FIELD_NAMES)
+    field_specs = _resolve_field_specs(field_names=field_names, field_specs=field_specs)
+    field_names = [field_spec.name for field_spec in field_specs]
+    field_specs_by_name = {field_spec.name: field_spec for field_spec in field_specs}
     labels = EVIDENCE_LABELS[language]
-    columns = matrix_columns(field_names=field_names, language=language)
+    columns = matrix_columns(field_names=field_names, language=language, field_specs=field_specs)
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     chunk_indexes = {
@@ -296,7 +336,13 @@ def export_evidence(
                 )
                 chunk = chunk_index.get(evidence.chunk_id)
                 excerpt = (
-                    _evidence_excerpt(str(chunk.get("text", "")), field_name, field.value, excerpt_chars)
+                    _evidence_excerpt(
+                        str(chunk.get("text", "")),
+                        field_name,
+                        field.value,
+                        excerpt_chars,
+                        field_spec=field_specs_by_name.get(field_name),
+                    )
                     if chunk
                     else ""
                 )
@@ -315,9 +361,10 @@ def export_matrix(
     markdown_path: str | Path,
     language: str = "zh",
     field_names: list[str] | None = None,
+    field_specs: list[FieldSpec] | None = None,
 ) -> tuple[Path, Path]:
     md_path = Path(markdown_path)
     csv_path = md_path.with_suffix(".csv")
-    export_markdown(extracts, md_path, language=language, field_names=field_names)
-    export_csv(extracts, csv_path, language=language, field_names=field_names)
+    export_markdown(extracts, md_path, language=language, field_names=field_names, field_specs=field_specs)
+    export_csv(extracts, csv_path, language=language, field_names=field_names, field_specs=field_specs)
     return md_path, csv_path

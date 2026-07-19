@@ -4,7 +4,7 @@ import json
 import os
 from typing import Protocol
 
-from .schema import DEFAULT_FIELD_NAMES
+from .schema import DEFAULT_FIELD_NAMES, FieldSpec, field_specs_from_names
 
 
 EXTRACTION_SYSTEM_PROMPT = """You are an academic paper information extraction engine.
@@ -54,7 +54,13 @@ def resolve_openai_config(
 
 
 class LLMClient(Protocol):
-    def extract_json(self, paper_id: str, chunks: list[dict], field_names: list[str] | None = None) -> dict:
+    def extract_json(
+        self,
+        paper_id: str,
+        chunks: list[dict],
+        field_names: list[str] | None = None,
+        field_specs: list[FieldSpec] | None = None,
+    ) -> dict:
         ...
 
 
@@ -96,8 +102,15 @@ class OpenAILLMClient:
             "language": self.language,
         }
 
-    def extract_json(self, paper_id: str, chunks: list[dict], field_names: list[str] | None = None) -> dict:
-        field_names = field_names or list(DEFAULT_FIELD_NAMES)
+    def extract_json(
+        self,
+        paper_id: str,
+        chunks: list[dict],
+        field_names: list[str] | None = None,
+        field_specs: list[FieldSpec] | None = None,
+    ) -> dict:
+        field_specs = field_specs or field_specs_from_names(field_names or list(DEFAULT_FIELD_NAMES))
+        field_names = [field_spec.name for field_spec in field_specs]
         payload = {
             "paper_id": paper_id,
             "chunks": [
@@ -109,25 +122,25 @@ class OpenAILLMClient:
                 for chunk in chunks
             ],
         }
-        user_content = self._build_user_content(payload, field_names=field_names)
+        user_content = self._build_user_content(payload, field_specs=field_specs)
         if self.api_mode == "responses":
-            content = self._extract_with_responses(user_content, field_names=field_names)
+            content = self._extract_with_responses(user_content, field_specs=field_specs)
         else:
-            content = self._extract_with_chat_completions(user_content, field_names=field_names)
+            content = self._extract_with_chat_completions(user_content, field_specs=field_specs)
 
         if not content:
             raise ValueError("LLM returned empty content")
         return json.loads(content)
 
-    def _build_user_content(self, payload: dict, field_names: list[str]) -> str:
+    def _build_user_content(self, payload: dict, field_specs: list[FieldSpec]) -> str:
         field_shape = {
-            field_name: {"value": "str", "evidence": [{"chunk_id": "str", "pages": ["int"]}]}
-            for field_name in field_names
+            field_spec.name: {"value": "str", "evidence": [{"chunk_id": "str", "pages": ["int"]}]}
+            for field_spec in field_specs
         }
         return (
             f"{LANGUAGE_OUTPUT_INSTRUCTIONS[self.language]}\n\n"
             "Extract the paper title and these fields:\n"
-            + "\n".join(f"- {field_name}" for field_name in field_names)
+            + "\n".join(self._format_field_instruction(field_spec) for field_spec in field_specs)
             + "\n\n"
             "Return only one valid JSON object matching this shape: "
             '{"paper_id": str, "title": str, "fields": '
@@ -136,33 +149,44 @@ class OpenAILLMClient:
             f"Input:\n{json.dumps(payload, ensure_ascii=False)}"
         )
 
-    def _extract_with_chat_completions(self, user_content: str, field_names: list[str]) -> str | None:
+    def _extract_with_chat_completions(self, user_content: str, field_specs: list[FieldSpec]) -> str | None:
         response = self.client.chat.completions.create(
             model=self.model,
             temperature=0,
             store=False,
             response_format={"type": "json_object"},
             messages=[
-                {"role": "system", "content": self._build_system_prompt(field_names)},
+                {"role": "system", "content": self._build_system_prompt(field_specs)},
                 {"role": "user", "content": user_content},
             ],
         )
         return response.choices[0].message.content
 
-    def _extract_with_responses(self, user_content: str, field_names: list[str]) -> str | None:
+    def _extract_with_responses(self, user_content: str, field_specs: list[FieldSpec]) -> str | None:
         response = self.client.responses.create(
             model=self.model,
             store=False,
             max_output_tokens=1200,
-            input=f"{self._build_system_prompt(field_names)}\n\n{user_content}",
+            input=f"{self._build_system_prompt(field_specs)}\n\n{user_content}",
         )
         content = getattr(response, "output_text", None)
         if content:
             return content
         return self._collect_response_text(response)
 
-    def _build_system_prompt(self, field_names: list[str]) -> str:
-        return EXTRACTION_SYSTEM_PROMPT + "\n\nExtract:\n- title\n" + "\n".join(f"- {field_name}" for field_name in field_names)
+    def _format_field_instruction(self, field_spec: FieldSpec) -> str:
+        details = []
+        if field_spec.description:
+            details.append(field_spec.description)
+        if field_spec.keywords:
+            details.append("Keywords: " + ", ".join(field_spec.keywords))
+        suffix = f": {'; '.join(details)}" if details else ""
+        return f"- {field_spec.name}{suffix}"
+
+    def _build_system_prompt(self, field_specs: list[FieldSpec]) -> str:
+        return EXTRACTION_SYSTEM_PROMPT + "\n\nExtract:\n- title\n" + "\n".join(
+            self._format_field_instruction(field_spec) for field_spec in field_specs
+        )
 
     def _collect_response_text(self, response: object) -> str | None:
         pieces = []

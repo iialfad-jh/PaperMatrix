@@ -6,7 +6,7 @@ from papermatrix import cli
 from papermatrix.cache import build_cache_metadata, load_cache_metadata, save_cache_metadata
 from papermatrix.extract import save_extract_json
 from papermatrix.llm import resolve_openai_config
-from papermatrix.schema import Evidence, ExtractedField, PaperExtract
+from papermatrix.schema import Evidence, ExtractedField, PaperExtract, field_specs_from_names, field_specs_metadata
 
 
 runner = CliRunner()
@@ -32,6 +32,7 @@ def save_matching_metadata(
     field_names: list[str] | None = None,
 ) -> None:
     field_names = field_names or ["problem", "method", "dataset", "metric", "result", "limitation"]
+    field_specs = field_specs_from_names(field_names)
     save_cache_metadata(
         build_cache_metadata(
             pdf_path,
@@ -39,7 +40,7 @@ def save_matching_metadata(
             llm_config=resolve_openai_config(language=language),
             max_chars=3500,
             max_chunks=12,
-            field_names=field_names,
+            fields_metadata=field_specs_metadata(field_specs),
         ),
         out.parent / ".papermatrix" / f"{pdf_path.stem}_meta.json",
     )
@@ -93,7 +94,7 @@ def test_cli_reruns_when_cache_metadata_differs(tmp_path: Path, monkeypatch):
         calls.append("pdf")
         return [{"page": 1, "text": "This paper proposes a metadata-aware cache."}]
 
-    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None):
+    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None, field_specs=None):
         calls.append(("extract", paper_id, selected_chunks, llm_client.__class__.__name__, field_names))
         return make_extract("Fresh Title", "fresh problem")
 
@@ -129,8 +130,8 @@ def test_cli_uses_custom_fields(tmp_path: Path, monkeypatch):
         calls.append("pdf")
         return [{"page": 1, "text": "The input uses early images and the output is a future canopy image."}]
 
-    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None):
-        calls.append(("extract", field_names))
+    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None, field_specs=None):
+        calls.append(("extract", field_names, [field_spec.name for field_spec in field_specs]))
         return PaperExtract(
             paper_id=paper_id,
             title="Custom Paper",
@@ -147,12 +148,71 @@ def test_cli_uses_custom_fields(tmp_path: Path, monkeypatch):
     result = runner.invoke(cli.app, [str(papers_dir), "--out", str(out), "--language", "en", "--fields", "input,output"])
 
     assert result.exit_code == 0, result.output
-    assert calls[2] == ("extract", ["input", "output"])
+    assert calls[2] == ("extract", ["input", "output"], ["input", "output"])
     text = out.read_text(encoding="utf-8")
     assert "| Paper | Input | Output |" in text
     assert "early images [p.1]" in text
     metadata = load_cache_metadata(tmp_path / ".papermatrix" / "paper_meta.json")
-    assert metadata["fields"] == ["input", "output"]
+    assert [field["name"] for field in metadata["fields"]] == ["input", "output"]
+
+
+def test_cli_uses_fields_config_file(tmp_path: Path, monkeypatch):
+    papers_dir = tmp_path / "papers"
+    papers_dir.mkdir()
+    (papers_dir / "paper.pdf").write_bytes(b"%PDF-1.4\n")
+    fields_path = tmp_path / "fields.json"
+    fields_path.write_text(
+        """{
+  "fields": [
+    {
+      "name": "crop_species",
+      "label_en": "Crop/Species",
+      "label_zh": "作物/物种",
+      "description": "Extract the crop or plant species studied in the paper.",
+      "keywords": ["crop", "species", "maize"]
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    out = tmp_path / "matrix.md"
+    calls = []
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            calls.append("llm")
+
+    def fake_read_pdf_pages(_path):
+        calls.append("pdf")
+        return [{"page": 1, "text": "The crop species is maize."}]
+
+    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None, field_specs=None):
+        calls.append(("extract", field_specs[0].label_en, field_specs[0].description, field_specs[0].keywords))
+        return PaperExtract(
+            paper_id=paper_id,
+            title="Config Paper",
+            fields={
+                "crop_species": ExtractedField(value="maize", evidence=[Evidence(chunk_id="paper_c0", pages=[1])]),
+            },
+        )
+
+    monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
+    monkeypatch.setattr(cli, "read_pdf_pages", fake_read_pdf_pages)
+    monkeypatch.setattr(cli, "extract_paper", fake_extract_paper)
+
+    result = runner.invoke(cli.app, [str(papers_dir), "--out", str(out), "--language", "en", "--fields", str(fields_path)])
+
+    assert result.exit_code == 0, result.output
+    assert calls[2] == (
+        "extract",
+        "Crop/Species",
+        "Extract the crop or plant species studied in the paper.",
+        ["crop", "species", "maize"],
+    )
+    text = out.read_text(encoding="utf-8")
+    assert "| Paper | Crop/Species |" in text
+    assert "maize [p.1]" in text
 
 
 def test_cli_force_ignores_cached_extract(tmp_path: Path, monkeypatch):
@@ -171,7 +231,7 @@ def test_cli_force_ignores_cached_extract(tmp_path: Path, monkeypatch):
         calls.append("pdf")
         return [{"page": 1, "text": "This paper proposes a cached-rerun method."}]
 
-    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None):
+    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None, field_specs=None):
         calls.append(("extract", paper_id, selected_chunks, llm_client.__class__.__name__, field_names))
         return make_extract("Fresh Title", "fresh problem")
 

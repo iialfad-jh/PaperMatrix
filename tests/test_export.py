@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from papermatrix.export import export_evidence, export_markdown
-from papermatrix.schema import Evidence, ExtractedField, PaperExtract
+from papermatrix.schema import Evidence, ExtractedField, FieldSpec, PaperExtract
 
 
 def test_markdown_export_escapes_pipe(tmp_path: Path):
@@ -62,6 +62,28 @@ def test_markdown_export_supports_custom_fields(tmp_path: Path):
     assert "| Paper | Input | Output |" in text
     assert "early images [p.1]" in text
     assert "future canopy image [p.2]" in text
+
+
+def test_markdown_export_uses_configured_field_labels(tmp_path: Path):
+    extract = PaperExtract(
+        paper_id="paper1",
+        title="Paper One",
+        fields={
+            "crop_species": ExtractedField(value="maize", evidence=[Evidence(chunk_id="paper1_c0", pages=[1])]),
+        },
+    )
+
+    output = tmp_path / "matrix.md"
+    export_markdown(
+        [extract],
+        output,
+        language="en",
+        field_specs=[FieldSpec(name="crop_species", label_en="Crop/Species")],
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "| Paper | Crop/Species |" in text
+    assert "maize [p.1]" in text
 
 
 def test_evidence_export_includes_chunk_excerpt(tmp_path: Path):

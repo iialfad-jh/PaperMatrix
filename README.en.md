@@ -70,6 +70,33 @@ papermatrix ./papers --out matrix.md --fields problem,method,input,output,datase
 
 Field names are used as internal JSON keys, so use English letters, numbers, and underscores, such as `model_input`, `crop_species`, and `future_output`. The default fields remain `problem,method,dataset,metric,result,limitation`.
 
+For clearer labels, field descriptions, and chunk-selection keywords, pass a JSON config file:
+
+```powershell
+papermatrix ./papers --out matrix.md --fields fields.json
+```
+
+```json
+{
+  "fields": [
+    {
+      "name": "crop_species",
+      "label_zh": "作物/物种",
+      "label_en": "Crop/Species",
+      "description": "Extract the crop or plant species studied in the paper.",
+      "keywords": ["crop", "species", "maize", "arabidopsis"]
+    },
+    {
+      "name": "model_input",
+      "label_zh": "模型输入",
+      "label_en": "Model Input",
+      "description": "Extract what inputs the model uses, such as images, time, weather, or treatment conditions.",
+      "keywords": ["input", "condition", "image", "time", "treatment"]
+    }
+  ]
+}
+```
+
 Input:
 
 ```text

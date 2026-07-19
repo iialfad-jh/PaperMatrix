@@ -70,6 +70,33 @@ papermatrix ./papers --out matrix.md --fields problem,method,input,output,datase
 
 字段名会作为内部 JSON key 使用，请使用英文字母、数字和下划线，例如 `model_input`、`crop_species`、`future_output`。默认字段仍然是 `problem,method,dataset,metric,result,limitation`。
 
+如果需要更明确的列名、字段说明和选块关键词，也可以传入 JSON 配置文件：
+
+```powershell
+papermatrix ./papers --out matrix.md --fields fields.json
+```
+
+```json
+{
+  "fields": [
+    {
+      "name": "crop_species",
+      "label_zh": "作物/物种",
+      "label_en": "Crop/Species",
+      "description": "Extract the crop or plant species studied in the paper.",
+      "keywords": ["crop", "species", "maize", "arabidopsis"]
+    },
+    {
+      "name": "model_input",
+      "label_zh": "模型输入",
+      "label_en": "Model Input",
+      "description": "Extract what inputs the model uses, such as images, time, weather, or treatment conditions.",
+      "keywords": ["input", "condition", "image", "time", "treatment"]
+    }
+  ]
+}
+```
+
 输入：
 
 ```text

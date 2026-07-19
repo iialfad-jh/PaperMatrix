@@ -1,4 +1,5 @@
 from papermatrix.selector import select_chunks_for_extraction
+from papermatrix.schema import FieldSpec
 
 
 def test_selector_picks_dataset_metric_result_chunks():
@@ -47,3 +48,20 @@ def test_selector_uses_custom_field_names_as_keywords():
 
     assert "paper_c6" in selected_ids
     assert "paper_c9" in selected_ids
+
+
+def test_selector_uses_configured_field_keywords():
+    chunks = [
+        {"chunk_id": f"paper_c{i}", "paper_id": "paper", "pages": [i + 1], "text": f"neutral section {i}"}
+        for i in range(14)
+    ]
+    chunks[8]["text"] = "The study focuses on maize grown under field treatment conditions."
+
+    selected = select_chunks_for_extraction(
+        chunks,
+        max_chunks=5,
+        field_specs=[FieldSpec(name="crop_species", keywords=["maize"])],
+    )
+    selected_ids = {chunk["chunk_id"] for chunk in selected}
+
+    assert "paper_c8" in selected_ids

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from .llm import LLMClient
-from .schema import DEFAULT_FIELD_NAMES, PaperExtract, unknown_field
+from .schema import DEFAULT_FIELD_NAMES, FieldSpec, PaperExtract, unknown_field
 
 
 def validate_extract(raw_extract: dict, paper_id: str, field_names: list[str] | None = None) -> PaperExtract:
@@ -36,8 +36,14 @@ def extract_paper(
     selected_chunks: list[dict],
     llm_client: LLMClient,
     field_names: list[str] | None = None,
+    field_specs: list[FieldSpec] | None = None,
 ) -> PaperExtract:
-    raw_extract = llm_client.extract_json(paper_id=paper_id, chunks=selected_chunks, field_names=field_names)
+    raw_extract = llm_client.extract_json(
+        paper_id=paper_id,
+        chunks=selected_chunks,
+        field_names=field_names,
+        field_specs=field_specs,
+    )
     return validate_extract(raw_extract, paper_id=paper_id, field_names=field_names)
 
 

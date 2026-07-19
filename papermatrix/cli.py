@@ -10,7 +10,7 @@ from .export import export_evidence, export_matrix, normalize_language
 from .extract import extract_paper, load_extract_json, save_extract_json
 from .llm import OpenAILLMClient, resolve_openai_config
 from .pdf import read_pdf_pages
-from .schema import parse_field_names
+from .schema import field_specs_metadata, parse_field_specs
 from .selector import select_chunks_for_extraction
 
 
@@ -64,7 +64,7 @@ def main(
     base_url: str | None = typer.Option(None, "--base-url", help="OpenAI-compatible API base URL."),
     api_mode: str | None = typer.Option(None, "--api-mode", help='API mode: "chat" or "responses".'),
     language: str = typer.Option("zh", "--language", "-l", help='Output language: "zh" or "en".'),
-    fields: str | None = typer.Option(None, "--fields", help="Comma-separated extraction fields. Example: problem,method,input,output,result"),
+    fields: str | None = typer.Option(None, "--fields", help="Comma-separated fields or a JSON fields file."),
     force: bool = typer.Option(False, "--force", help="Ignore cached extracts and rerun PDF extraction plus LLM calls."),
     debug_config: bool = typer.Option(False, "--debug-config", help="Print model/API configuration without revealing the API key."),
     provider_probe: bool = typer.Option(False, "--provider-probe", help="Send one tiny provider test request and exit."),
@@ -74,7 +74,8 @@ def main(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     try:
-        field_names = parse_field_names(fields)
+        field_specs = parse_field_specs(fields)
+        field_names = [field_spec.name for field_spec in field_specs]
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     try:
@@ -122,7 +123,7 @@ def main(
             llm_config=llm_config,
             max_chars=max_chars,
             max_chunks=max_chunks,
-            field_names=field_names,
+            fields_metadata=field_specs_metadata(field_specs),
         )
         cache_is_current = is_cache_metadata_current(load_cache_metadata(metadata_path), current_metadata)
 
@@ -142,9 +143,20 @@ def main(
         chunks = chunk_pages(pages, paper_id=paper_id, max_chars=max_chars)
         save_chunks_jsonl(chunks, chunks_path)
 
-        selected_chunks = select_chunks_for_extraction(chunks, max_chunks=max_chunks, field_names=field_names)
+        selected_chunks = select_chunks_for_extraction(
+            chunks,
+            max_chunks=max_chunks,
+            field_names=field_names,
+            field_specs=field_specs,
+        )
         try:
-            extract = extract_paper(paper_id, selected_chunks, get_llm_client(), field_names=field_names)
+            extract = extract_paper(
+                paper_id,
+                selected_chunks,
+                get_llm_client(),
+                field_names=field_names,
+                field_specs=field_specs,
+            )
         except Exception as exc:
             if _is_provider_error(exc):
                 typer.echo(_format_provider_error(exc, language=output_language), err=True)
@@ -155,9 +167,22 @@ def main(
         chunks_by_paper[extract.paper_id] = chunks
         extracts.append(extract)
 
-    markdown_path, csv_path = export_matrix(extracts, out, language=output_language, field_names=field_names)
+    markdown_path, csv_path = export_matrix(
+        extracts,
+        out,
+        language=output_language,
+        field_names=field_names,
+        field_specs=field_specs,
+    )
     evidence_path = out.with_suffix(".evidence.md")
-    export_evidence(extracts, evidence_path, chunks_by_paper=chunks_by_paper, language=output_language, field_names=field_names)
+    export_evidence(
+        extracts,
+        evidence_path,
+        chunks_by_paper=chunks_by_paper,
+        language=output_language,
+        field_names=field_names,
+        field_specs=field_specs,
+    )
     typer.echo(_message(output_language, "wrote", path=markdown_path))
     typer.echo(_message(output_language, "wrote", path=csv_path))
     typer.echo(_message(output_language, "wrote", path=evidence_path))
