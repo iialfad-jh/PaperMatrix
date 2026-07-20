@@ -2,7 +2,7 @@
 
 Language: [中文](README.md) | English
 
-PaperMatrix is a lightweight Python CLI for turning a local folder of PDF papers into a comparison matrix. It reads PDFs, cleans and chunks paper text, selects extraction-relevant chunks, asks an LLM for structured fields, and exports Markdown, CSV, and evidence files.
+PaperMatrix is a lightweight Python CLI for turning local PDFs, arXiv papers, or direct PDF URLs into a comparison matrix. It reads PDFs, cleans and chunks paper text, selects extraction-relevant chunks, asks an LLM for structured fields, and exports Markdown, CSV, and evidence files.
 
 ## Install
 
@@ -55,6 +55,16 @@ The default output language is Chinese:
 ```bash
 papermatrix ./papers --out matrix.md
 ```
+
+You can also pass an arXiv ID, an arXiv page URL, or a direct PDF URL:
+
+```bash
+papermatrix arxiv:2401.12345 --out matrix.md
+papermatrix https://arxiv.org/abs/2401.12345 --out matrix.md
+papermatrix https://example.org/paper.pdf --out matrix.md
+```
+
+Remote PDFs are cached under `.papermatrix/downloads/`. Repeated runs reuse the downloaded file; `--force` downloads it again and reruns extraction.
 
 For English matrix output:
 
@@ -112,6 +122,8 @@ matrix.md
 matrix.csv
 matrix.evidence.md
 .papermatrix/
+  downloads/
+    arxiv-2401.12345.pdf
   paper1_chunks.jsonl
   paper1_extract.json
   paper1_meta.json
@@ -142,8 +154,7 @@ In Chinese mode, the LLM is instructed to summarize extracted field values in Si
 
 ## Current Limits
 
-- Local PDF folders only.
 - No Web UI.
-- No arXiv, Zotero, chat QA, or table recognition.
+- No DOI, Zotero, chat QA, or table recognition.
 - Extraction only uses selected chunks from each paper.
 - Fields without explicit evidence are normalized to `unknown`; Chinese matrix output displays them as `未知`.

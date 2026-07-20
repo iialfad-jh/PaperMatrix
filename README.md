@@ -2,7 +2,7 @@
 
 语言：中文 | [English](README.en.md)
 
-PaperMatrix 是一个轻量级 Python 命令行工具，用于把本地 PDF 论文文件夹转换成论文对比矩阵。它会读取 PDF、清洗并切块文本、选择和抽取最相关的片段、调用 LLM 生成结构化字段，最后导出 Markdown、CSV 和证据文件。
+PaperMatrix 是一个轻量级 Python 命令行工具，用于把本地 PDF、arXiv 论文或直接 PDF 链接转换成论文对比矩阵。它会读取 PDF、清洗并切块文本、选择和抽取最相关的片段、调用 LLM 生成结构化字段，最后导出 Markdown、CSV 和证据文件。
 
 ## 安装
 
@@ -55,6 +55,16 @@ papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai
 ```bash
 papermatrix ./papers --out matrix.md
 ```
+
+也可以直接传入 arXiv ID、arXiv 页面链接或 PDF 直链：
+
+```bash
+papermatrix arxiv:2401.12345 --out matrix.md
+papermatrix https://arxiv.org/abs/2401.12345 --out matrix.md
+papermatrix https://example.org/paper.pdf --out matrix.md
+```
+
+远程 PDF 会缓存在 `.papermatrix/downloads/` 中。再次运行时会复用下载文件；使用 `--force` 会重新下载并重新抽取。
 
 如果需要英文矩阵：
 
@@ -112,6 +122,8 @@ matrix.md
 matrix.csv
 matrix.evidence.md
 .papermatrix/
+  downloads/
+    arxiv-2401.12345.pdf
   paper1_chunks.jsonl
   paper1_extract.json
   paper1_meta.json
@@ -142,8 +154,7 @@ papermatrix ./papers --out matrix.md --force
 
 ## 当前限制
 
-- 只支持本地 PDF 文件夹。
 - 没有 Web UI。
-- 不支持 arXiv、Zotero、对话问答或表格识别。
+- 不支持 DOI、Zotero、对话问答或表格识别。
 - 抽取只使用每篇论文中被选中的片段。
 - 缺少明确证据的字段会被规范化为 `unknown`，最终中文矩阵中显示为 `未知`。

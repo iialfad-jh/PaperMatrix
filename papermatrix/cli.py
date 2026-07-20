@@ -12,14 +12,15 @@ from .llm import OpenAILLMClient, resolve_openai_config
 from .pdf import read_pdf_pages
 from .schema import field_specs_metadata, parse_field_specs
 from .selector import select_chunks_for_extraction
+from .source import SourceError, resolve_pdf_paths
 
 
-app = typer.Typer(help="Build paper comparison matrices from local PDF folders.")
+app = typer.Typer(help="Build paper comparison matrices from local folders, arXiv, or PDF URLs.")
 
 CLI_MESSAGES = {
     "en": {
         "config": "LLM config: {config}",
-        "no_pdfs": "No PDF files found in {papers_dir}",
+        "no_pdfs": "No PDF files found for {source}",
         "using_cache": "Using cached extract for {filename}",
         "cache_stale": "Cache metadata changed; rerunning {filename}...",
         "processing": "Processing {filename}...",
@@ -34,7 +35,7 @@ CLI_MESSAGES = {
     },
     "zh": {
         "config": "LLM 配置：{config}",
-        "no_pdfs": "在 {papers_dir} 中没有找到 PDF 文件",
+        "no_pdfs": "没有找到 PDF 文件：{source}",
         "using_cache": "使用缓存结果：{filename}",
         "cache_stale": "缓存元数据已变化，重新处理 {filename}...",
         "processing": "正在处理 {filename}...",
@@ -56,7 +57,7 @@ def _message(language: str, key: str, **kwargs: object) -> str:
 
 @app.command()
 def main(
-    papers_dir: Path = typer.Argument(..., exists=True, file_okay=False, readable=True, help="Folder containing PDF papers."),
+    source: str = typer.Argument(..., help="Local PDF folder, arXiv ID/URL, or direct PDF URL."),
     out: Path = typer.Option(Path("matrix.md"), "--out", "-o", help="Markdown matrix output path."),
     max_chars: int = typer.Option(3500, help="Maximum characters per chunk."),
     max_chunks: int = typer.Option(12, help="Maximum chunks sent to the LLM per paper."),
@@ -104,11 +105,14 @@ def main(
         _run_provider_probe(get_llm_client(), language=output_language)
         return
 
-    pdf_paths = sorted(papers_dir.glob("*.pdf"))
-    if not pdf_paths:
-        raise typer.BadParameter(_message(output_language, "no_pdfs", papers_dir=papers_dir))
-
     work_dir = out.parent / ".papermatrix"
+    try:
+        pdf_paths = resolve_pdf_paths(source, work_dir / "downloads", force=force)
+    except SourceError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if not pdf_paths:
+        raise typer.BadParameter(_message(output_language, "no_pdfs", source=source))
+
     extracts = []
     chunks_by_paper = {}
 

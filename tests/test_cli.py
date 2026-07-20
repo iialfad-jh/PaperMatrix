@@ -252,3 +252,34 @@ def test_cli_force_ignores_cached_extract(tmp_path: Path, monkeypatch):
     assert "Fresh Title" in evidence_text
     assert "> This paper proposes a cached-rerun method." in evidence_text
     assert load_cache_metadata(tmp_path / ".papermatrix" / "paper_meta.json") is not None
+
+
+def test_cli_resolves_remote_source_into_download_cache(tmp_path: Path, monkeypatch):
+    downloaded_pdf = tmp_path / ".papermatrix" / "downloads" / "arxiv-2401.12345.pdf"
+    downloaded_pdf.parent.mkdir(parents=True)
+    downloaded_pdf.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "matrix.md"
+    calls = []
+
+    def fake_resolve_pdf_paths(source, download_dir, force=False):
+        calls.append((source, download_dir, force))
+        return [downloaded_pdf]
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            pass
+
+    monkeypatch.setattr(cli, "resolve_pdf_paths", fake_resolve_pdf_paths)
+    monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
+    monkeypatch.setattr(cli, "read_pdf_pages", lambda _path: [{"page": 1, "text": "A remote paper."}])
+    monkeypatch.setattr(
+        cli,
+        "extract_paper",
+        lambda paper_id, *_args, **_kwargs: make_extract("Remote Paper", "remote problem"),
+    )
+
+    result = runner.invoke(cli.app, ["arxiv:2401.12345", "--out", str(out), "--language", "en"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [("arxiv:2401.12345", tmp_path / ".papermatrix" / "downloads", False)]
+    assert "Remote Paper" in out.read_text(encoding="utf-8")
