@@ -78,6 +78,24 @@ To customize matrix columns, pass comma-separated field names:
 papermatrix ./papers --out matrix.md --fields problem,method,input,output,dataset,result
 ```
 
+You can also use a built-in field preset:
+
+```powershell
+papermatrix ./papers --out matrix.md --preset general
+papermatrix ./papers --out matrix.md --preset machine-learning
+papermatrix ./papers --out matrix.md --preset plant-growth
+papermatrix ./papers --out matrix.md --preset survey
+```
+
+List presets or inspect a preset's complete JSON configuration without providing a paper source:
+
+```powershell
+papermatrix --list-presets
+papermatrix --show-preset plant-growth
+```
+
+`general` fits typical experimental papers, `machine-learning` adds model inputs, outputs, and baselines, `plant-growth` adds crop, growth-stage, treatment, and environment fields, and `survey` focuses on review scope, taxonomy, and research gaps. `--preset` cannot be combined with `--fields`; use the output from `--show-preset` as a starting point for a custom fields JSON file.
+
 Field names are used as internal JSON keys, so use English letters, numbers, and underscores, such as `model_input`, `crop_species`, and `future_output`. The default fields remain `problem,method,dataset,metric,result,limitation`.
 
 For clearer labels, field descriptions, and chunk-selection keywords, pass a JSON config file:
@@ -131,7 +149,7 @@ matrix.evidence.md
 
 `matrix.evidence.md` lists each non-unknown field value, evidence pages, chunk id, and the most relevant local source sentences so you can quickly check whether the LLM extracted the right information.
 
-On repeated runs, PaperMatrix reuses existing `.papermatrix/*_extract.json` and `.papermatrix/*_meta.json` files when the metadata still matches, then skips PDF reading, chunking, and LLM calls for those papers. Metadata checks the PDF name, size, modification time, output language, model, API mode, base URL, `--max-chars`, `--max-chunks`, and extraction fields:
+On repeated runs, PaperMatrix reuses existing `.papermatrix/*_extract.json` and `.papermatrix/*_meta.json` files when the metadata still matches, then skips PDF reading, chunking, and LLM calls for those papers. Metadata checks the PDF name, size, modification time, output language, model, API mode, base URL, `--max-chars`, `--max-chunks`, preset name, and complete extraction field configuration:
 
 ```bash
 papermatrix ./papers --out matrix.md

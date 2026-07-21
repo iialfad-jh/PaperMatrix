@@ -28,3 +28,6 @@ addopts = ["--basetemp=.pytest_tmp"]
 
 [tool.setuptools.packages.find]
 include = ["papermatrix*"]
+
+[tool.setuptools.package-data]
+papermatrix = ["presets/*.json"]

@@ -78,6 +78,24 @@ papermatrix ./papers --out matrix.md --language en
 papermatrix ./papers --out matrix.md --fields problem,method,input,output,dataset,result
 ```
 
+也可以直接使用内置字段预设：
+
+```powershell
+papermatrix ./papers --out matrix.md --preset general
+papermatrix ./papers --out matrix.md --preset machine-learning
+papermatrix ./papers --out matrix.md --preset plant-growth
+papermatrix ./papers --out matrix.md --preset survey
+```
+
+查看所有预设或某个预设的完整 JSON 配置时，不需要传入论文来源：
+
+```powershell
+papermatrix --list-presets
+papermatrix --show-preset plant-growth
+```
+
+`general` 适合一般实验论文，`machine-learning` 增加模型输入输出和基线，`plant-growth` 增加作物、发育阶段、处理与环境，`survey` 面向综述的检索范围、分类体系和研究空白。`--preset` 与 `--fields` 不能同时使用；需要调整预设时，可参考 `--show-preset` 的输出创建自己的 fields JSON。
+
 字段名会作为内部 JSON key 使用，请使用英文字母、数字和下划线，例如 `model_input`、`crop_species`、`future_output`。默认字段仍然是 `problem,method,dataset,metric,result,limitation`。
 
 如果需要更明确的列名、字段说明和选块关键词，也可以传入 JSON 配置文件：
@@ -131,7 +149,7 @@ matrix.evidence.md
 
 `matrix.evidence.md` 会列出每个非未知字段的抽取值、证据页码、chunk id 和最相关的本地原文句子，方便快速复核 LLM 是否摘对。
 
-再次运行时，如果 `.papermatrix/*_extract.json` 和 `.papermatrix/*_meta.json` 已存在且元数据匹配，PaperMatrix 会默认复用缓存的抽取结果，跳过对应 PDF 的读取、切块和 LLM 调用。元数据会检查 PDF 文件名、大小、修改时间、输出语言、模型、API 模式、base URL、`--max-chars`、`--max-chunks` 和抽取字段：
+再次运行时，如果 `.papermatrix/*_extract.json` 和 `.papermatrix/*_meta.json` 已存在且元数据匹配，PaperMatrix 会默认复用缓存的抽取结果，跳过对应 PDF 的读取、切块和 LLM 调用。元数据会检查 PDF 文件名、大小、修改时间、输出语言、模型、API 模式、base URL、`--max-chars`、`--max-chunks`、预设名称和完整抽取字段配置：
 
 ```bash
 papermatrix ./papers --out matrix.md

@@ -1,0 +1,69 @@
+{
+  "description_zh": "机器学习论文：任务、模型输入输出、数据集、基线、指标、结果和局限。",
+  "description_en": "Machine-learning papers covering tasks, model I/O, datasets, baselines, metrics, results, and limitations.",
+  "fields": [
+    {
+      "name": "problem",
+      "label_zh": "任务/问题",
+      "label_en": "Task/Problem",
+      "description": "Extract the machine-learning task or research problem.",
+      "keywords": ["task", "problem", "objective", "prediction", "classification", "generation"]
+    },
+    {
+      "name": "method",
+      "label_zh": "模型/方法",
+      "label_en": "Model/Method",
+      "description": "Extract the proposed model, architecture, training method, or algorithm.",
+      "keywords": ["model", "method", "architecture", "algorithm", "training", "framework"]
+    },
+    {
+      "name": "model_input",
+      "label_zh": "模型输入",
+      "label_en": "Model Input",
+      "description": "Extract the data, features, modalities, or context given to the model.",
+      "keywords": ["input", "feature", "modality", "token", "image", "signal"]
+    },
+    {
+      "name": "model_output",
+      "label_zh": "模型输出",
+      "label_en": "Model Output",
+      "description": "Extract what the model predicts, generates, estimates, or classifies.",
+      "keywords": ["output", "prediction", "target", "label", "generation", "estimate"]
+    },
+    {
+      "name": "dataset",
+      "label_zh": "数据集",
+      "label_en": "Dataset",
+      "description": "Extract training, validation, and test datasets.",
+      "keywords": ["dataset", "benchmark", "training set", "test set", "corpus"]
+    },
+    {
+      "name": "baseline",
+      "label_zh": "对比基线",
+      "label_en": "Baseline",
+      "description": "Extract the principal baseline or comparison methods.",
+      "keywords": ["baseline", "comparison", "state of the art", "SOTA", "compared with"]
+    },
+    {
+      "name": "metric",
+      "label_zh": "评价指标",
+      "label_en": "Metric",
+      "description": "Extract the principal evaluation metrics.",
+      "keywords": ["metric", "accuracy", "precision", "recall", "F1", "AUROC", "error"]
+    },
+    {
+      "name": "result",
+      "label_zh": "主要结果",
+      "label_en": "Main Result",
+      "description": "Extract the main performance results, preferably with numbers and comparisons.",
+      "keywords": ["result", "performance", "outperform", "improvement", "ablation"]
+    },
+    {
+      "name": "limitation",
+      "label_zh": "局限",
+      "label_en": "Limitation",
+      "description": "Extract model limitations, failure cases, computational costs, or validity threats.",
+      "keywords": ["limitation", "failure", "cost", "bias", "robustness", "future work"]
+    }
+  ]
+}

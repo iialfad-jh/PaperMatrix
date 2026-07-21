@@ -1,0 +1,69 @@
+{
+  "description_zh": "综述论文：范围、分类体系、检索来源、纳入标准、方法、发现和研究空白。",
+  "description_en": "Survey papers covering scope, taxonomy, sources, inclusion criteria, reviewed methods, findings, and gaps.",
+  "fields": [
+    {
+      "name": "scope",
+      "label_zh": "综述范围",
+      "label_en": "Scope",
+      "description": "Extract the topic, research questions, and boundaries of the review.",
+      "keywords": ["scope", "objective", "research question", "review", "survey"]
+    },
+    {
+      "name": "taxonomy",
+      "label_zh": "分类体系",
+      "label_en": "Taxonomy",
+      "description": "Extract the taxonomy, conceptual framework, or categories proposed by the review.",
+      "keywords": ["taxonomy", "classification", "category", "framework", "theme"]
+    },
+    {
+      "name": "search_sources",
+      "label_zh": "检索来源",
+      "label_en": "Search Sources",
+      "description": "Extract databases, repositories, venues, and search periods used to find studies.",
+      "keywords": ["database", "search", "source", "repository", "publication period"]
+    },
+    {
+      "name": "inclusion_criteria",
+      "label_zh": "纳入标准",
+      "label_en": "Inclusion Criteria",
+      "description": "Extract inclusion, exclusion, screening, and quality-assessment criteria.",
+      "keywords": ["inclusion", "exclusion", "eligibility", "screening", "quality assessment"]
+    },
+    {
+      "name": "methods_reviewed",
+      "label_zh": "综述方法",
+      "label_en": "Methods Reviewed",
+      "description": "Extract the main families of methods or approaches covered.",
+      "keywords": ["method", "approach", "technique", "model", "algorithm"]
+    },
+    {
+      "name": "datasets",
+      "label_zh": "常用数据集",
+      "label_en": "Common Datasets",
+      "description": "Extract datasets, benchmarks, populations, or corpora emphasized in the review.",
+      "keywords": ["dataset", "benchmark", "corpus", "sample", "cohort"]
+    },
+    {
+      "name": "findings",
+      "label_zh": "主要发现",
+      "label_en": "Main Findings",
+      "description": "Extract the review's principal synthesized findings and trends.",
+      "keywords": ["finding", "trend", "result", "observation", "evidence"]
+    },
+    {
+      "name": "research_gaps",
+      "label_zh": "研究空白",
+      "label_en": "Research Gaps",
+      "description": "Extract open problems, underexplored areas, and future research directions.",
+      "keywords": ["gap", "open problem", "future research", "challenge", "opportunity"]
+    },
+    {
+      "name": "limitation",
+      "label_zh": "综述局限",
+      "label_en": "Review Limitation",
+      "description": "Extract limitations of the review methodology, coverage, or evidence base.",
+      "keywords": ["limitation", "bias", "coverage", "validity", "constraint"]
+    }
+  ]
+}

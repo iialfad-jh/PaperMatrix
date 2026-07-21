@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -283,3 +284,73 @@ def test_cli_resolves_remote_source_into_download_cache(tmp_path: Path, monkeypa
     assert result.exit_code == 0, result.output
     assert calls == [("arxiv:2401.12345", tmp_path / ".papermatrix" / "downloads", False)]
     assert "Remote Paper" in out.read_text(encoding="utf-8")
+
+
+def test_cli_lists_presets_without_source():
+    result = runner.invoke(cli.app, ["--list-presets", "--language", "en"])
+
+    assert result.exit_code == 0, result.output
+    assert "general: General paper comparison" in result.output
+    assert "machine-learning:" in result.output
+    assert "plant-growth:" in result.output
+    assert "survey:" in result.output
+
+
+def test_cli_shows_preset_json_without_source():
+    result = runner.invoke(cli.app, ["--show-preset", "plant-growth"])
+
+    assert result.exit_code == 0, result.output
+    shown_preset = json.loads(result.output)
+    assert shown_preset["name"] == "plant-growth"
+    assert shown_preset["fields"][0]["name"] == "crop_species"
+    assert shown_preset["fields"][0]["label_zh"] == "作物/物种"
+
+
+def test_cli_rejects_fields_with_preset():
+    result = runner.invoke(cli.app, ["--fields", "problem,result", "--preset", "general"])
+
+    assert result.exit_code != 0
+    assert "--fields and --preset cannot be used together" in result.output
+
+
+def test_cli_uses_preset_fields_and_records_preset_in_cache(tmp_path: Path, monkeypatch):
+    papers_dir = tmp_path / "papers"
+    papers_dir.mkdir()
+    (papers_dir / "paper.pdf").write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "matrix.md"
+    calls = []
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            pass
+
+    def fake_extract_paper(paper_id, selected_chunks, llm_client, field_names=None, field_specs=None):
+        calls.append((field_names, field_specs[0].label_en, field_specs[0].keywords))
+        return PaperExtract(
+            paper_id=paper_id,
+            title="Plant Paper",
+            fields={
+                "crop_species": ExtractedField(
+                    value="maize",
+                    evidence=[Evidence(chunk_id="paper_c0", pages=[1])],
+                )
+            },
+        )
+
+    monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
+    monkeypatch.setattr(cli, "read_pdf_pages", lambda _path: [{"page": 1, "text": "The crop species is maize."}])
+    monkeypatch.setattr(cli, "extract_paper", fake_extract_paper)
+
+    result = runner.invoke(
+        cli.app,
+        [str(papers_dir), "--out", str(out), "--language", "en", "--preset", "plant-growth"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls[0][0][0:3] == ["crop_species", "growth_stage", "treatment"]
+    assert calls[0][1] == "Crop/Species"
+    assert "species" in calls[0][2]
+    assert "| Paper | Crop/Species | Growth Stage |" in out.read_text(encoding="utf-8")
+    metadata = load_cache_metadata(tmp_path / ".papermatrix" / "paper_meta.json")
+    assert metadata["preset"] == "plant-growth"
+    assert metadata["fields"][0]["name"] == "crop_species"

@@ -1,0 +1,69 @@
+{
+  "description_zh": "植物生长研究：物种、生育期、处理、环境、模型输入输出、数据和结果。",
+  "description_en": "Plant-growth studies covering species, growth stage, treatments, environment, model I/O, data, and results.",
+  "fields": [
+    {
+      "name": "crop_species",
+      "label_zh": "作物/物种",
+      "label_en": "Crop/Species",
+      "description": "Extract the crop, plant species, cultivar, or genotype studied.",
+      "keywords": ["crop", "species", "cultivar", "genotype", "variety", "plant"]
+    },
+    {
+      "name": "growth_stage",
+      "label_zh": "生育期",
+      "label_en": "Growth Stage",
+      "description": "Extract the plant age, developmental phase, or growth stage.",
+      "keywords": ["growth stage", "development", "days after", "seedling", "flowering", "maturity"]
+    },
+    {
+      "name": "treatment",
+      "label_zh": "处理条件",
+      "label_en": "Treatment",
+      "description": "Extract experimental treatments, interventions, or stress conditions.",
+      "keywords": ["treatment", "stress", "irrigation", "fertilizer", "drought", "temperature"]
+    },
+    {
+      "name": "environment",
+      "label_zh": "生长环境",
+      "label_en": "Environment",
+      "description": "Extract greenhouse, field, chamber, climate, soil, and other growth conditions.",
+      "keywords": ["environment", "greenhouse", "field", "growth chamber", "soil", "climate"]
+    },
+    {
+      "name": "model_input",
+      "label_zh": "模型输入",
+      "label_en": "Model Input",
+      "description": "Extract model inputs such as images, time, weather, treatment, or sensor measurements.",
+      "keywords": ["input", "image", "time", "weather", "sensor", "phenotype"]
+    },
+    {
+      "name": "model_output",
+      "label_zh": "预测目标",
+      "label_en": "Prediction Target",
+      "description": "Extract predicted plant traits, growth states, yields, or future observations.",
+      "keywords": ["output", "target", "prediction", "yield", "biomass", "growth"]
+    },
+    {
+      "name": "dataset",
+      "label_zh": "数据集/样本",
+      "label_en": "Dataset/Samples",
+      "description": "Extract dataset size, plants, observations, imaging schedule, and train-test split.",
+      "keywords": ["dataset", "sample", "plant", "observation", "image", "split"]
+    },
+    {
+      "name": "metric",
+      "label_zh": "评价指标",
+      "label_en": "Metric",
+      "description": "Extract evaluation metrics for prediction or biological agreement.",
+      "keywords": ["metric", "RMSE", "MAE", "R2", "accuracy", "correlation"]
+    },
+    {
+      "name": "result",
+      "label_zh": "主要结果",
+      "label_en": "Main Result",
+      "description": "Extract the main biological or predictive findings, preferably with quantitative evidence.",
+      "keywords": ["result", "growth", "yield", "performance", "significant", "improvement"]
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 
 def build_cache_metadata(
@@ -16,6 +16,7 @@ def build_cache_metadata(
     max_chunks: int,
     fields_metadata: list[dict] | None = None,
     field_names: list[str] | None = None,
+    preset: str | None = None,
 ) -> dict:
     path = Path(pdf_path)
     stat = path.stat()
@@ -38,6 +39,7 @@ def build_cache_metadata(
             "max_chunks": max_chunks,
         },
         "fields": fields_metadata if fields_metadata is not None else field_names,
+        "preset": preset,
     }
 
 

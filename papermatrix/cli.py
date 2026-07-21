@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -10,6 +11,7 @@ from .export import export_evidence, export_matrix, normalize_language
 from .extract import extract_paper, load_extract_json, save_extract_json
 from .llm import OpenAILLMClient, resolve_openai_config
 from .pdf import read_pdf_pages
+from .presets import list_presets, load_preset
 from .schema import field_specs_metadata, parse_field_specs
 from .selector import select_chunks_for_extraction
 from .source import SourceError, resolve_pdf_paths
@@ -57,7 +59,7 @@ def _message(language: str, key: str, **kwargs: object) -> str:
 
 @app.command()
 def main(
-    source: str = typer.Argument(..., help="Local PDF folder, arXiv ID/URL, or direct PDF URL."),
+    source: str | None = typer.Argument(None, help="Local PDF folder, arXiv ID/URL, or direct PDF URL."),
     out: Path = typer.Option(Path("matrix.md"), "--out", "-o", help="Markdown matrix output path."),
     max_chars: int = typer.Option(3500, help="Maximum characters per chunk."),
     max_chunks: int = typer.Option(12, help="Maximum chunks sent to the LLM per paper."),
@@ -66,6 +68,9 @@ def main(
     api_mode: str | None = typer.Option(None, "--api-mode", help='API mode: "chat" or "responses".'),
     language: str = typer.Option("zh", "--language", "-l", help='Output language: "zh" or "en".'),
     fields: str | None = typer.Option(None, "--fields", help="Comma-separated fields or a JSON fields file."),
+    preset: str | None = typer.Option(None, "--preset", help="Use a built-in extraction field preset."),
+    list_presets_flag: bool = typer.Option(False, "--list-presets", help="List built-in field presets and exit."),
+    show_preset: str | None = typer.Option(None, "--show-preset", help="Show a preset as JSON and exit."),
     force: bool = typer.Option(False, "--force", help="Ignore cached extracts and rerun PDF extraction plus LLM calls."),
     debug_config: bool = typer.Option(False, "--debug-config", help="Print model/API configuration without revealing the API key."),
     provider_probe: bool = typer.Option(False, "--provider-probe", help="Send one tiny provider test request and exit."),
@@ -74,11 +79,32 @@ def main(
         output_language = normalize_language(language)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+    if list_presets_flag:
+        for available_preset in list_presets():
+            typer.echo(f"{available_preset.name}: {available_preset.description(output_language)}")
+        return
+    if show_preset:
+        try:
+            selected_preset = load_preset(show_preset)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--show-preset") from exc
+        typer.echo(json.dumps(selected_preset.as_dict(), ensure_ascii=False, indent=2))
+        return
+    if fields and preset:
+        raise typer.BadParameter("--fields and --preset cannot be used together")
+
+    active_preset_name: str | None = None
     try:
-        field_specs = parse_field_specs(fields)
+        if preset:
+            selected_preset = load_preset(preset)
+            active_preset_name = selected_preset.name
+            field_specs = selected_preset.fields
+        else:
+            field_specs = parse_field_specs(fields)
         field_names = [field_spec.name for field_spec in field_specs]
     except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
+        raise typer.BadParameter(str(exc), param_hint="--preset" if preset else "--fields") from exc
     try:
         llm_config = resolve_openai_config(model=model, base_url=base_url, api_mode=api_mode, language=output_language)
     except ValueError as exc:
@@ -104,6 +130,11 @@ def main(
     if provider_probe:
         _run_provider_probe(get_llm_client(), language=output_language)
         return
+    if source is None:
+        raise typer.BadParameter(
+            "SOURCE is required unless --list-presets, --show-preset, or --provider-probe is used",
+            param_hint="SOURCE",
+        )
 
     work_dir = out.parent / ".papermatrix"
     try:
@@ -128,6 +159,7 @@ def main(
             max_chars=max_chars,
             max_chunks=max_chunks,
             fields_metadata=field_specs_metadata(field_specs),
+            preset=active_preset_name,
         )
         cache_is_current = is_cache_metadata_current(load_cache_metadata(metadata_path), current_metadata)
 

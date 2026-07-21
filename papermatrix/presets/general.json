@@ -1,0 +1,48 @@
+{
+  "description_zh": "通用论文对比：研究问题、方法、数据、指标、结果和局限。",
+  "description_en": "General paper comparison covering the problem, method, data, metrics, results, and limitations.",
+  "fields": [
+    {
+      "name": "problem",
+      "label_zh": "研究问题",
+      "label_en": "Problem",
+      "description": "Extract the research problem, objective, or question addressed by the paper.",
+      "keywords": ["problem", "objective", "motivation", "challenge", "research question"]
+    },
+    {
+      "name": "method",
+      "label_zh": "方法",
+      "label_en": "Method",
+      "description": "Extract the main method, approach, or experimental design.",
+      "keywords": ["method", "approach", "framework", "design", "procedure"]
+    },
+    {
+      "name": "dataset",
+      "label_zh": "数据集",
+      "label_en": "Dataset",
+      "description": "Extract the datasets, samples, study population, or data sources.",
+      "keywords": ["dataset", "data", "sample", "participants", "cohort"]
+    },
+    {
+      "name": "metric",
+      "label_zh": "评价指标",
+      "label_en": "Metric",
+      "description": "Extract the principal evaluation metrics or measured outcomes.",
+      "keywords": ["metric", "measure", "evaluation", "accuracy", "outcome"]
+    },
+    {
+      "name": "result",
+      "label_zh": "结果",
+      "label_en": "Result",
+      "description": "Extract the main quantitative or qualitative findings.",
+      "keywords": ["result", "finding", "performance", "improvement", "significant"]
+    },
+    {
+      "name": "limitation",
+      "label_zh": "局限",
+      "label_en": "Limitation",
+      "description": "Extract limitations, threats to validity, or stated weaknesses.",
+      "keywords": ["limitation", "weakness", "threat", "future work", "caveat"]
+    }
+  ]
+}
