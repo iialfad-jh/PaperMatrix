@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from io import BytesIO
 from pathlib import Path
 
@@ -94,3 +95,85 @@ def test_local_folder_still_returns_pdf_files(tmp_path: Path):
     (papers / "notes.txt").write_text("ignore", encoding="utf-8")
 
     assert source.resolve_pdf_paths(str(papers), tmp_path / "downloads") == [papers / "a.pdf", papers / "b.pdf"]
+
+
+def test_doi_resolves_crossref_pdf_and_saves_source_metadata(tmp_path: Path, monkeypatch):
+    requested_urls = []
+    crossref_payload = {
+        "message": {
+            "title": ["A Test Paper"],
+            "author": [{"given": "Ada", "family": "Lovelace"}],
+            "published": {"date-parts": [[2025, 3, 4]]},
+            "container-title": ["Test Journal"],
+            "link": [{"URL": "https://repository.example.org/test-paper.pdf", "content-type": "application/pdf"}],
+        }
+    }
+
+    def fake_urlopen(request, timeout):
+        requested_urls.append(request.full_url)
+        if "api.crossref.org" in request.full_url:
+            return FakeResponse(json.dumps(crossref_payload).encode("utf-8"))
+        return FakeResponse(b"%PDF-1.7\ntest")
+
+    monkeypatch.setattr(source, "urlopen", fake_urlopen)
+
+    paths = source.resolve_pdf_paths("doi:10.1234/example", tmp_path / "downloads")
+
+    assert paths[0].name.startswith("doi-a-test-paper-")
+    assert requested_urls == [
+        "https://api.crossref.org/works/10.1234%2Fexample",
+        "https://repository.example.org/test-paper.pdf",
+    ]
+    saved_metadata = json.loads(paths[0].with_suffix(".source.json").read_text(encoding="utf-8"))
+    assert saved_metadata["source_type"] == "doi"
+    assert saved_metadata["doi"] == "10.1234/example"
+    assert saved_metadata["title"] == "A Test Paper"
+    assert saved_metadata["authors"] == [{"given": "Ada", "family": "Lovelace"}]
+    assert saved_metadata["pdf_url"] == "https://repository.example.org/test-paper.pdf"
+    assert "downloaded_at" in saved_metadata
+
+
+def test_doi_prefers_unpaywall_pdf_when_email_is_configured(tmp_path: Path, monkeypatch):
+    requested_urls = []
+    crossref_payload = {
+        "message": {
+            "title": ["Open Paper"],
+            "link": [{"URL": "https://publisher.example.org/paper.pdf", "content-type": "application/pdf"}],
+        }
+    }
+    unpaywall_payload = {
+        "best_oa_location": {"url_for_pdf": "https://repository.example.org/open-paper.pdf"},
+        "oa_locations": [],
+    }
+
+    def fake_urlopen(request, timeout):
+        requested_urls.append(request.full_url)
+        if "api.crossref.org" in request.full_url:
+            return FakeResponse(json.dumps(crossref_payload).encode("utf-8"))
+        if "api.unpaywall.org" in request.full_url:
+            return FakeResponse(json.dumps(unpaywall_payload).encode("utf-8"))
+        return FakeResponse(b"%PDF-1.7\nopen")
+
+    monkeypatch.setenv("UNPAYWALL_EMAIL", "researcher@example.org")
+    monkeypatch.setattr(source, "urlopen", fake_urlopen)
+
+    path = source.resolve_pdf_paths("https://doi.org/10.1234/open", tmp_path / "downloads")[0]
+
+    assert path.read_bytes().endswith(b"open")
+    assert requested_urls[0] == "https://api.crossref.org/works/10.1234%2Fopen"
+    assert requested_urls[1].startswith("https://api.unpaywall.org/v2/10.1234%2Fopen?")
+    assert requested_urls[2] == "https://repository.example.org/open-paper.pdf"
+
+
+def test_doi_reports_missing_open_pdf(tmp_path: Path, monkeypatch):
+    crossref_payload = {"message": {"title": ["Closed Paper"], "link": []}}
+
+    monkeypatch.delenv("UNPAYWALL_EMAIL", raising=False)
+    monkeypatch.setattr(
+        source,
+        "urlopen",
+        lambda *_args, **_kwargs: FakeResponse(json.dumps(crossref_payload).encode("utf-8")),
+    )
+
+    with pytest.raises(source.SourceError, match="No open PDF link found for DOI 10.1234/closed"):
+        source.resolve_pdf_paths("10.1234/closed", tmp_path / "downloads")

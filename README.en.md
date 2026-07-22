@@ -62,9 +62,18 @@ You can also pass an arXiv ID, an arXiv page URL, or a direct PDF URL:
 papermatrix arxiv:2401.12345 --out matrix.md
 papermatrix https://arxiv.org/abs/2401.12345 --out matrix.md
 papermatrix https://example.org/paper.pdf --out matrix.md
+papermatrix doi:10.1234/example --out matrix.md
+papermatrix https://doi.org/10.1234/example --out matrix.md
 ```
 
-Remote PDFs are cached under `.papermatrix/downloads/`. Repeated runs reuse the downloaded file; `--force` downloads it again and reruns extraction.
+DOI imports first read Crossref metadata, then try legitimate open PDF links. Set `UNPAYWALL_EMAIL` to also query Unpaywall for open-access repository locations:
+
+```powershell
+$env:UNPAYWALL_EMAIL="researcher@example.org"
+papermatrix doi:10.1234/example --out matrix.md
+```
+
+When no accessible open PDF exists, PaperMatrix reports a clear error and does not save a paywalled page or login page as a PDF. Remote PDFs are cached under `.papermatrix/downloads/`; repeated runs reuse the downloaded file, and `--force` downloads it again and reruns extraction.
 
 For English matrix output:
 
@@ -142,6 +151,9 @@ matrix.evidence.md
 .papermatrix/
   downloads/
     arxiv-2401.12345.pdf
+    arxiv-2401.12345.source.json
+    doi-a-paper-xxxxxxxxxxxx.pdf
+    doi-a-paper-xxxxxxxxxxxx.source.json
   paper1_chunks.jsonl
   paper1_extract.json
   paper1_meta.json
@@ -173,6 +185,6 @@ In Chinese mode, the LLM is instructed to summarize extracted field values in Si
 ## Current Limits
 
 - No Web UI.
-- No DOI, Zotero, chat QA, or table recognition.
+- No Zotero, chat QA, or table recognition.
 - Extraction only uses selected chunks from each paper.
 - Fields without explicit evidence are normalized to `unknown`; Chinese matrix output displays them as `未知`.

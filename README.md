@@ -62,9 +62,18 @@ papermatrix ./papers --out matrix.md
 papermatrix arxiv:2401.12345 --out matrix.md
 papermatrix https://arxiv.org/abs/2401.12345 --out matrix.md
 papermatrix https://example.org/paper.pdf --out matrix.md
+papermatrix doi:10.1234/example --out matrix.md
+papermatrix https://doi.org/10.1234/example --out matrix.md
 ```
 
-远程 PDF 会缓存在 `.papermatrix/downloads/` 中。再次运行时会复用下载文件；使用 `--force` 会重新下载并重新抽取。
+DOI 导入会先读取 Crossref 元数据，再尝试合法开放 PDF。设置 `UNPAYWALL_EMAIL` 后，还会查询 Unpaywall 的开放获取仓储：
+
+```powershell
+$env:UNPAYWALL_EMAIL="researcher@example.org"
+papermatrix doi:10.1234/example --out matrix.md
+```
+
+如果 DOI 没有可访问的开放 PDF，程序会明确报错，不会把付费页面或登录页面保存成 PDF。远程 PDF 会缓存在 `.papermatrix/downloads/` 中；再次运行时会复用下载文件，使用 `--force` 会重新下载并重新抽取。
 
 如果需要英文矩阵：
 
@@ -142,6 +151,9 @@ matrix.evidence.md
 .papermatrix/
   downloads/
     arxiv-2401.12345.pdf
+    arxiv-2401.12345.source.json
+    doi-a-paper-xxxxxxxxxxxx.pdf
+    doi-a-paper-xxxxxxxxxxxx.source.json
   paper1_chunks.jsonl
   paper1_extract.json
   paper1_meta.json
@@ -173,6 +185,6 @@ papermatrix ./papers --out matrix.md --force
 ## 当前限制
 
 - 没有 Web UI。
-- 不支持 DOI、Zotero、对话问答或表格识别。
+- 不支持 Zotero、对话问答或表格识别。
 - 抽取只使用每篇论文中被选中的片段。
 - 缺少明确证据的字段会被规范化为 `unknown`，最终中文矩阵中显示为 `未知`。
