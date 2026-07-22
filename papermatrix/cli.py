@@ -59,7 +59,10 @@ def _message(language: str, key: str, **kwargs: object) -> str:
 
 @app.command()
 def main(
-    source: str | None = typer.Argument(None, help="Local PDF folder, arXiv ID/URL, or direct PDF URL."),
+    source: str | None = typer.Argument(
+        None,
+        help="Local PDF folder, arXiv ID/URL, DOI, or direct PDF URL.",
+    ),
     out: Path = typer.Option(Path("matrix.md"), "--out", "-o", help="Markdown matrix output path."),
     max_chars: int = typer.Option(3500, help="Maximum characters per chunk."),
     max_chunks: int = typer.Option(12, help="Maximum chunks sent to the LLM per paper."),
