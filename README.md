@@ -75,6 +75,28 @@ papermatrix doi:10.1234/example --out matrix.md
 
 如果 DOI 没有可访问的开放 PDF，程序会明确报错，不会把付费页面或登录页面保存成 PDF。远程 PDF 会缓存在 `.papermatrix/downloads/` 中；再次运行时会复用下载文件，使用 `--force` 会重新下载并重新抽取。
 
+需要混合批量导入时，可以使用来源文件：
+
+```powershell
+papermatrix --sources-file sources.txt --out matrix.md
+```
+
+`sources.txt` 每行一个来源，支持空行和以 `#` 开头的注释；相对本地路径以来源文件所在目录为基准：
+
+```text
+# 本地 PDF、arXiv、DOI 和 PDF URL 可以混合使用
+papers/local-paper.pdf
+arxiv:2401.12345
+doi:10.1234/example
+https://example.org/paper.pdf
+```
+
+程序会规范化并去除重复的 arXiv、DOI、URL 和本地路径。单个来源失败时默认继续处理其余论文，并把逐项状态、错误信息和缓存文件写入 `.papermatrix/import-report.json`。需要在首个失败处停止时使用：
+
+```powershell
+papermatrix --sources-file sources.txt --out matrix.md --fail-fast
+```
+
 如果需要英文矩阵：
 
 ```bash
@@ -149,6 +171,7 @@ matrix.md
 matrix.csv
 matrix.evidence.md
 .papermatrix/
+  import-report.json
   downloads/
     arxiv-2401.12345.pdf
     arxiv-2401.12345.source.json

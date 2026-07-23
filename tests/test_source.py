@@ -61,6 +61,8 @@ def test_direct_pdf_url_uses_download_cache(tmp_path: Path, monkeypatch):
     assert first == second
     assert first[0].name.startswith("My_Paper-")
     assert calls == [url]
+    saved_metadata = json.loads(first[0].with_suffix(".source.json").read_text(encoding="utf-8"))
+    assert saved_metadata["pdf_url"] == "https://example.org/files/My%20Paper.pdf"
 
 
 def test_force_redownloads_remote_pdf(tmp_path: Path, monkeypatch):
@@ -95,6 +97,13 @@ def test_local_folder_still_returns_pdf_files(tmp_path: Path):
     (papers / "notes.txt").write_text("ignore", encoding="utf-8")
 
     assert source.resolve_pdf_paths(str(papers), tmp_path / "downloads") == [papers / "a.pdf", papers / "b.pdf"]
+
+
+def test_local_pdf_file_is_a_supported_source(tmp_path: Path):
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_bytes(b"%PDF-")
+
+    assert source.resolve_pdf_paths(str(pdf_path), tmp_path / "downloads") == [pdf_path]
 
 
 def test_doi_resolves_crossref_pdf_and_saves_source_metadata(tmp_path: Path, monkeypatch):

@@ -75,6 +75,28 @@ papermatrix doi:10.1234/example --out matrix.md
 
 When no accessible open PDF exists, PaperMatrix reports a clear error and does not save a paywalled page or login page as a PDF. Remote PDFs are cached under `.papermatrix/downloads/`; repeated runs reuse the downloaded file, and `--force` downloads it again and reruns extraction.
 
+For a mixed batch import, use a sources file:
+
+```powershell
+papermatrix --sources-file sources.txt --out matrix.md
+```
+
+`sources.txt` accepts one source per line, blank lines, and comments beginning with `#`. Relative local paths are resolved from the sources file's directory:
+
+```text
+# Local PDFs, arXiv, DOI, and PDF URLs can be mixed
+papers/local-paper.pdf
+arxiv:2401.12345
+doi:10.1234/example
+https://example.org/paper.pdf
+```
+
+PaperMatrix normalizes and deduplicates arXiv, DOI, URL, and local-path inputs. A failed source does not stop the remaining papers by default; per-source statuses, errors, and cached files are written to `.papermatrix/import-report.json`. To stop at the first failure, use:
+
+```powershell
+papermatrix --sources-file sources.txt --out matrix.md --fail-fast
+```
+
 For English matrix output:
 
 ```bash
@@ -149,6 +171,7 @@ matrix.md
 matrix.csv
 matrix.evidence.md
 .papermatrix/
+  import-report.json
   downloads/
     arxiv-2401.12345.pdf
     arxiv-2401.12345.source.json

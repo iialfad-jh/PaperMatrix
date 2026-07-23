@@ -17,12 +17,13 @@ def build_cache_metadata(
     fields_metadata: list[dict] | None = None,
     field_names: list[str] | None = None,
     preset: str | None = None,
+    paper_id: str | None = None,
 ) -> dict:
     path = Path(pdf_path)
     stat = path.stat()
     return {
         "cache_version": CACHE_VERSION,
-        "paper_id": path.stem,
+        "paper_id": paper_id or path.stem,
         "pdf": {
             "name": path.name,
             "size": stat.st_size,

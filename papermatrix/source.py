@@ -8,7 +8,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, unquote, urlencode, urlparse
+from urllib.parse import quote, unquote, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 
@@ -27,9 +27,11 @@ class SourceError(ValueError):
 def resolve_pdf_paths(source: str, download_dir: str | Path, *, force: bool = False) -> list[Path]:
     local_path = Path(source).expanduser()
     if local_path.exists():
-        if not local_path.is_dir():
-            raise SourceError(f"Local source must be a folder containing PDFs: {local_path}")
-        return sorted(local_path.glob("*.pdf"))
+        if local_path.is_dir():
+            return sorted(local_path.glob("*.pdf"))
+        if local_path.is_file() and local_path.suffix.lower() == ".pdf":
+            return [local_path]
+        raise SourceError(f"Local source must be a PDF file or folder containing PDFs: {local_path}")
 
     arxiv_identifier = _parse_arxiv_identifier(source)
     if arxiv_identifier:
@@ -62,8 +64,63 @@ def resolve_pdf_paths(source: str, download_dir: str | Path, *, force: bool = Fa
         return [destination]
 
     raise SourceError(
-        "Source must be a local PDF folder, an arXiv ID/URL, a DOI, or a direct HTTP(S) PDF URL."
+        "Source must be a local PDF file/folder, an arXiv ID/URL, a DOI, or a direct HTTP(S) PDF URL."
     )
+
+
+def source_type(source: str) -> str:
+    local_path = Path(source).expanduser()
+    if _parse_arxiv_identifier(source):
+        return "arxiv"
+    if _parse_doi(source):
+        return "doi"
+    if local_path.exists() or not _is_http_url(source):
+        return "local"
+    return "direct_url"
+
+
+def canonical_source_key(source: str) -> str:
+    arxiv_identifier = _parse_arxiv_identifier(source)
+    if arxiv_identifier:
+        return f"arxiv:{arxiv_identifier.lower()}"
+    doi = _parse_doi(source)
+    if doi:
+        return f"doi:{doi.lower()}"
+
+    parsed = urlparse(source.strip())
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        canonical_url = urlunparse(
+            (
+                parsed.scheme.lower(),
+                parsed.netloc.lower(),
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                "",
+            )
+        )
+        return f"url:{canonical_url}"
+
+    path = Path(source).expanduser().resolve(strict=False)
+    return f"local:{os.path.normcase(str(path))}"
+
+
+def redact_source(source: str) -> str:
+    parsed = urlparse(source.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return source
+    hostname = parsed.hostname or ""
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    netloc = hostname
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, "", ""))
+
+
+def _is_http_url(source: str) -> bool:
+    parsed = urlparse(source.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def _parse_arxiv_identifier(source: str) -> str | None:
@@ -188,9 +245,9 @@ def _fetch_json(url: str) -> dict:
         with urlopen(request, timeout=30) as response:
             payload = json.load(response)
     except (HTTPError, URLError, OSError, ValueError, json.JSONDecodeError) as exc:
-        raise SourceError(f"Could not fetch metadata: {url}") from exc
+        raise SourceError(f"Could not fetch metadata: {redact_source(url)}") from exc
     if not isinstance(payload, dict):
-        raise SourceError(f"Metadata response is not a JSON object: {url}")
+        raise SourceError(f"Metadata response is not a JSON object: {redact_source(url)}")
     return payload
 
 
@@ -237,12 +294,21 @@ def _safe_name(value: str) -> str:
 def _save_source_metadata(destination: Path, metadata: dict) -> None:
     metadata_path = destination.with_suffix(".source.json")
     payload = {
-        **metadata,
+        **_redact_source_metadata(metadata),
         "downloaded_at": datetime.now(timezone.utc).isoformat(),
     }
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     with metadata_path.open("w", encoding="utf-8") as file:
         json.dump(payload, file, ensure_ascii=False, indent=2)
+
+
+def _redact_source_metadata(metadata: dict) -> dict:
+    redacted = dict(metadata)
+    for key in ("input", "pdf_url", "source_url"):
+        value = redacted.get(key)
+        if isinstance(value, str):
+            redacted[key] = redact_source(value)
+    return redacted
 
 
 def _download_pdf(url: str, destination: Path, *, force: bool) -> Path:
@@ -256,7 +322,9 @@ def _download_pdf(url: str, destination: Path, *, force: bool) -> Path:
         with urlopen(request, timeout=30) as response:
             content_length = response.headers.get("Content-Length")
             if content_length and int(content_length) > MAX_DOWNLOAD_BYTES:
-                raise SourceError(f"PDF is larger than the {MAX_DOWNLOAD_BYTES // (1024 * 1024)} MB limit: {url}")
+                raise SourceError(
+                    f"PDF is larger than the {MAX_DOWNLOAD_BYTES // (1024 * 1024)} MB limit: {redact_source(url)}"
+                )
 
             with tempfile.NamedTemporaryFile(
                 mode="wb", prefix=f".{destination.stem}-", suffix=".part", dir=destination.parent, delete=False
@@ -267,22 +335,22 @@ def _download_pdf(url: str, destination: Path, *, force: bool) -> Path:
                     downloaded += len(block)
                     if downloaded > MAX_DOWNLOAD_BYTES:
                         raise SourceError(
-                            f"PDF is larger than the {MAX_DOWNLOAD_BYTES // (1024 * 1024)} MB limit: {url}"
+                            f"PDF is larger than the {MAX_DOWNLOAD_BYTES // (1024 * 1024)} MB limit: {redact_source(url)}"
                         )
                     temporary_file.write(block)
 
         if temporary_path is None:
-            raise SourceError(f"Downloaded content is not a PDF: {url}")
+            raise SourceError(f"Downloaded content is not a PDF: {redact_source(url)}")
         with temporary_path.open("rb") as downloaded_file:
             pdf_header = downloaded_file.read(1024)
         if b"%PDF-" not in pdf_header:
-            raise SourceError(f"Downloaded content is not a PDF: {url}")
+            raise SourceError(f"Downloaded content is not a PDF: {redact_source(url)}")
         temporary_path.replace(destination)
         return destination
     except SourceError:
         raise
     except (HTTPError, URLError, OSError, ValueError) as exc:
-        raise SourceError(f"Could not download PDF from {url}: {exc}") from exc
+        raise SourceError(f"Could not download PDF from {redact_source(url)}: {exc}") from exc
     finally:
         if temporary_path is not None and temporary_path.exists():
             temporary_path.unlink()

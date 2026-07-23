@@ -354,3 +354,88 @@ def test_cli_uses_preset_fields_and_records_preset_in_cache(tmp_path: Path, monk
     metadata = load_cache_metadata(tmp_path / ".papermatrix" / "paper_meta.json")
     assert metadata["preset"] == "plant-growth"
     assert metadata["fields"][0]["name"] == "crop_species"
+
+
+def test_cli_sources_file_continues_after_failed_source_and_writes_report(tmp_path: Path, monkeypatch):
+    local_pdf = tmp_path / "local.pdf"
+    local_pdf.write_bytes(b"%PDF-1.4\n")
+    sources_file = tmp_path / "sources.txt"
+    sources_file.write_text("missing.pdf\nlocal.pdf\n", encoding="utf-8")
+    out = tmp_path / "matrix.md"
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            pass
+
+    def fake_extract_paper(paper_id, *_args, **_kwargs):
+        return PaperExtract(
+            paper_id=paper_id,
+            title="Local Paper",
+            fields={"problem": ExtractedField(value="test problem")},
+        )
+
+    monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
+    monkeypatch.setattr(cli, "read_pdf_pages", lambda _path: [{"page": 1, "text": "A local paper."}])
+    monkeypatch.setattr(cli, "extract_paper", fake_extract_paper)
+
+    result = runner.invoke(
+        cli.app,
+        ["--sources-file", str(sources_file), "--out", str(out), "--language", "en"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Import summary: 1 success, 0 cached, 0 duplicate, 1 failed" in result.output
+    assert "Local Paper" in out.read_text(encoding="utf-8")
+    report = json.loads((tmp_path / ".papermatrix" / "import-report.json").read_text(encoding="utf-8"))
+    assert report["summary"]["success"] == 1
+    assert report["summary"]["failed"] == 1
+    assert report["items"][0]["status"] == "failed"
+
+
+def test_cli_rejects_source_with_sources_file(tmp_path: Path):
+    sources_file = tmp_path / "sources.txt"
+    sources_file.write_text("arxiv:2401.12345\n", encoding="utf-8")
+
+    result = runner.invoke(cli.app, ["arxiv:2401.12345", "--sources-file", str(sources_file)])
+
+    assert result.exit_code != 0
+    assert "SOURCE and --sources-file cannot be used together" in result.output
+
+
+def test_cli_fail_fast_writes_report_and_stops_before_processing(tmp_path: Path, monkeypatch):
+    local_pdf = tmp_path / "local.pdf"
+    local_pdf.write_bytes(b"%PDF-1.4\n")
+    sources_file = tmp_path / "sources.txt"
+    sources_file.write_text("missing.pdf\nlocal.pdf\n", encoding="utf-8")
+    out = tmp_path / "matrix.md"
+
+    monkeypatch.setattr(
+        cli,
+        "read_pdf_pages",
+        lambda _path: (_ for _ in ()).throw(AssertionError("PDF processing should not start after fail-fast")),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        ["--sources-file", str(sources_file), "--out", str(out), "--fail-fast"],
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "--fail-fast" in result.output
+    assert not out.exists()
+    report = json.loads((tmp_path / ".papermatrix" / "import-report.json").read_text(encoding="utf-8"))
+    assert report["stopped_early"] is True
+    assert report["summary"]["failed"] == 1
+    assert report["summary"]["skipped"] == 1
+
+
+def test_duplicate_pdf_stems_receive_unique_paper_ids(tmp_path: Path):
+    first = tmp_path / "first" / "paper.pdf"
+    second = tmp_path / "second" / "paper.pdf"
+    first.parent.mkdir()
+    second.parent.mkdir()
+
+    paper_ids = cli._paper_ids_for_paths([first, second])
+
+    assert len(set(paper_ids)) == 2
+    assert all(paper_id.startswith("paper-") for paper_id in paper_ids)
