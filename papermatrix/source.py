@@ -4,12 +4,17 @@ import hashlib
 import json
 import os
 import re
+import ssl
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
+
+import certifi
+
+from .retry import call_with_retries
 
 
 ARXIV_ID_PATTERN = re.compile(
@@ -18,13 +23,20 @@ ARXIV_ID_PATTERN = re.compile(
 )
 DOI_PATTERN = re.compile(r"^(?:doi:\s*)?(?P<doi>10\.\d{4,9}/[-._;()/:A-Z0-9]+)$", re.IGNORECASE)
 MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 
 class SourceError(ValueError):
     pass
 
 
-def resolve_pdf_paths(source: str, download_dir: str | Path, *, force: bool = False) -> list[Path]:
+def resolve_pdf_paths(
+    source: str,
+    download_dir: str | Path,
+    *,
+    force: bool = False,
+    retries: int = 2,
+) -> list[Path]:
     local_path = Path(source).expanduser()
     if local_path.exists():
         if local_path.is_dir():
@@ -37,7 +49,7 @@ def resolve_pdf_paths(source: str, download_dir: str | Path, *, force: bool = Fa
     if arxiv_identifier:
         url = f"https://arxiv.org/pdf/{arxiv_identifier}.pdf"
         filename = f"arxiv-{_safe_name(arxiv_identifier)}.pdf"
-        destination = _download_pdf(url, Path(download_dir) / filename, force=force)
+        destination = _download_pdf(url, Path(download_dir) / filename, force=force, retries=retries)
         _save_source_metadata(
             destination,
             {
@@ -51,12 +63,12 @@ def resolve_pdf_paths(source: str, download_dir: str | Path, *, force: bool = Fa
 
     doi = _parse_doi(source)
     if doi:
-        return [_resolve_doi_pdf(doi, source, Path(download_dir), force=force)]
+        return [_resolve_doi_pdf(doi, source, Path(download_dir), force=force, retries=retries)]
 
     parsed = urlparse(source)
     if parsed.scheme in {"http", "https"} and parsed.netloc:
         filename = _url_filename(source)
-        destination = _download_pdf(source, Path(download_dir) / filename, force=force)
+        destination = _download_pdf(source, Path(download_dir) / filename, force=force, retries=retries)
         _save_source_metadata(
             destination,
             {"source_type": "direct_url", "input": source, "pdf_url": source},
@@ -159,8 +171,8 @@ def _parse_doi(source: str) -> str | None:
     return match.group("doi") if match else None
 
 
-def _resolve_doi_pdf(doi: str, input_source: str, download_dir: Path, *, force: bool) -> Path:
-    metadata = _fetch_crossref_metadata(doi)
+def _resolve_doi_pdf(doi: str, input_source: str, download_dir: Path, *, force: bool, retries: int) -> Path:
+    metadata = _fetch_crossref_metadata(doi, retries=retries)
     title = metadata.get("title") or "paper"
     destination = download_dir / _doi_filename(doi, title)
     candidates: list[str] = []
@@ -168,7 +180,7 @@ def _resolve_doi_pdf(doi: str, input_source: str, download_dir: Path, *, force: 
     unpaywall_email = os.environ.get("UNPAYWALL_EMAIL", "").strip()
     if unpaywall_email:
         try:
-            unpaywall = _fetch_unpaywall_metadata(doi, unpaywall_email)
+            unpaywall = _fetch_unpaywall_metadata(doi, unpaywall_email, retries=retries)
             candidates.extend(_unpaywall_pdf_urls(unpaywall))
         except SourceError:
             pass
@@ -181,7 +193,7 @@ def _resolve_doi_pdf(doi: str, input_source: str, download_dir: Path, *, force: 
     errors = []
     for pdf_url in candidates:
         try:
-            downloaded_path = _download_pdf(pdf_url, destination, force=force)
+            downloaded_path = _download_pdf(pdf_url, destination, force=force, retries=retries)
             _save_source_metadata(
                 downloaded_path,
                 {
@@ -203,10 +215,10 @@ def _resolve_doi_pdf(doi: str, input_source: str, download_dir: Path, *, force: 
     raise SourceError(f"No accessible open PDF found for DOI {doi}.{detail}")
 
 
-def _fetch_crossref_metadata(doi: str) -> dict:
+def _fetch_crossref_metadata(doi: str, *, retries: int) -> dict:
     url = f"https://api.crossref.org/works/{quote(doi, safe='')}"
     try:
-        payload = _fetch_json(url)
+        payload = _fetch_json(url, retries=retries)
         message = payload.get("message", {})
         if not isinstance(message, dict):
             raise ValueError("Crossref response has no message object")
@@ -229,26 +241,30 @@ def _fetch_crossref_metadata(doi: str) -> dict:
     }
 
 
-def _fetch_unpaywall_metadata(doi: str, email: str) -> dict:
+def _fetch_unpaywall_metadata(doi: str, email: str, *, retries: int) -> dict:
     query = urlencode({"email": email})
     url = f"https://api.unpaywall.org/v2/{quote(doi, safe='')}?{query}"
     try:
-        payload = _fetch_json(url)
+        payload = _fetch_json(url, retries=retries)
     except SourceError as exc:
         raise SourceError(f"Could not resolve OA metadata from Unpaywall: {doi}") from exc
     return payload if isinstance(payload, dict) else {}
 
 
-def _fetch_json(url: str) -> dict:
-    request = Request(url, headers={"User-Agent": "PaperMatrix/0.1 (+https://github.com/iialfad-jh/PaperMatrix)"})
+def _fetch_json(url: str, *, retries: int) -> dict:
     try:
-        with urlopen(request, timeout=30) as response:
-            payload = json.load(response)
+        payload, _ = call_with_retries(lambda: _fetch_json_once(url), retries)
     except (HTTPError, URLError, OSError, ValueError, json.JSONDecodeError) as exc:
         raise SourceError(f"Could not fetch metadata: {redact_source(url)}") from exc
     if not isinstance(payload, dict):
         raise SourceError(f"Metadata response is not a JSON object: {redact_source(url)}")
     return payload
+
+
+def _fetch_json_once(url: str) -> dict:
+    request = Request(url, headers={"User-Agent": "PaperMatrix/0.1 (+https://github.com/iialfad-jh/PaperMatrix)"})
+    with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
+        return json.load(response)
 
 
 def _unpaywall_pdf_urls(metadata: dict) -> list[str]:
@@ -311,15 +327,25 @@ def _redact_source_metadata(metadata: dict) -> dict:
     return redacted
 
 
-def _download_pdf(url: str, destination: Path, *, force: bool) -> Path:
+def _download_pdf(url: str, destination: Path, *, force: bool, retries: int) -> Path:
     if destination.exists() and not force:
         return destination
 
+    try:
+        downloaded_path, _ = call_with_retries(lambda: _download_pdf_once(url, destination), retries)
+        return downloaded_path
+    except SourceError:
+        raise
+    except (HTTPError, URLError, OSError, ValueError) as exc:
+        raise SourceError(f"Could not download PDF from {redact_source(url)}: {exc}") from exc
+
+
+def _download_pdf_once(url: str, destination: Path) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     request = Request(url, headers={"User-Agent": "PaperMatrix/0.1 (+https://github.com/iialfad-jh/PaperMatrix)"})
     temporary_path: Path | None = None
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
             content_length = response.headers.get("Content-Length")
             if content_length and int(content_length) > MAX_DOWNLOAD_BYTES:
                 raise SourceError(
@@ -347,10 +373,6 @@ def _download_pdf(url: str, destination: Path, *, force: bool) -> Path:
             raise SourceError(f"Downloaded content is not a PDF: {redact_source(url)}")
         temporary_path.replace(destination)
         return destination
-    except SourceError:
-        raise
-    except (HTTPError, URLError, OSError, ValueError) as exc:
-        raise SourceError(f"Could not download PDF from {redact_source(url)}: {exc}") from exc
     finally:
         if temporary_path is not None and temporary_path.exists():
             temporary_path.unlink()

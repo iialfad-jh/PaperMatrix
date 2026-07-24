@@ -17,7 +17,7 @@ def validate_extract(raw_extract: dict, paper_id: str, field_names: list[str] | 
 
     extract = PaperExtract.model_validate(
         {
-            "paper_id": raw_extract.get("paper_id") or paper_id,
+            "paper_id": paper_id,
             "title": raw_extract.get("title") or paper_id,
             "fields": fields,
         }

@@ -97,6 +97,20 @@ https://example.org/paper.pdf
 papermatrix --sources-file sources.txt --out matrix.md --fail-fast
 ```
 
+论文处理阶段也会逐篇隔离：某篇 PDF 损坏或 LLM 请求失败时，程序会记录错误并继续处理其余论文。下载、元数据和 LLM API 的瞬时错误默认重试 2 次，永久性请求错误不会重试；可用 `--retries` 调整上限：
+
+```powershell
+papermatrix --sources-file sources.txt --out matrix.md --retries 4
+```
+
+每次处理都会写入 `.papermatrix/run-report.json`，其中保留每篇论文的状态、已完成阶段、重试上限和错误摘要。下面的命令只重新处理状态为 `pdf_failed`、`llm_failed` 或 `skipped` 的论文，同时复用成功结果和原运行配置：
+
+```powershell
+papermatrix --retry-failed .papermatrix/run-report.json
+```
+
+`--retry-failed` 适用于已经解析出本地 PDF 路径的论文。来源导入失败仍记录在 `import-report.json` 中；重新执行原来的 `--sources-file` 命令即可重试这些来源，已下载文件仍会命中缓存。
+
 如果需要英文矩阵：
 
 ```bash
@@ -172,6 +186,7 @@ matrix.csv
 matrix.evidence.md
 .papermatrix/
   import-report.json
+  run-report.json
   downloads/
     arxiv-2401.12345.pdf
     arxiv-2401.12345.source.json
@@ -195,6 +210,15 @@ papermatrix ./papers --out matrix.md
 ```bash
 papermatrix ./papers --out matrix.md --force
 ```
+
+默认测试套件完全离线。真实服务测试需要显式开启：
+
+```powershell
+$env:PAPERMATRIX_RUN_INTEGRATION="1"
+python -m pytest -m integration
+```
+
+设置该变量后会执行 arXiv 下载检查；如需执行极小的真实 LLM 检查，还要设置 `PAPERMATRIX_RUN_LLM_INTEGRATION=1` 和 `OPENAI_API_KEY`。
 
 ## 输出语言
 

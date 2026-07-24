@@ -32,8 +32,9 @@ class FakeResponse(BytesIO):
 def test_resolve_arxiv_sources(tmp_path: Path, monkeypatch, input_source: str, expected_url: str, expected_name: str):
     requested_urls = []
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         requested_urls.append((request.full_url, timeout))
+        assert context is source.SSL_CONTEXT
         return FakeResponse(b"%PDF-1.7\ntest")
 
     monkeypatch.setattr(source, "urlopen", fake_urlopen)
@@ -48,8 +49,9 @@ def test_resolve_arxiv_sources(tmp_path: Path, monkeypatch, input_source: str, e
 def test_direct_pdf_url_uses_download_cache(tmp_path: Path, monkeypatch):
     calls = []
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         calls.append(request.full_url)
+        assert context is source.SSL_CONTEXT
         return FakeResponse(b"%PDF-1.4\ntest")
 
     monkeypatch.setattr(source, "urlopen", fake_urlopen)
@@ -68,8 +70,9 @@ def test_direct_pdf_url_uses_download_cache(tmp_path: Path, monkeypatch):
 def test_force_redownloads_remote_pdf(tmp_path: Path, monkeypatch):
     contents = [b"%PDF-1.4\nfirst", b"%PDF-1.4\nsecond"]
 
-    def fake_urlopen(_request, timeout):
+    def fake_urlopen(_request, timeout, context=None):
         assert timeout == 30
+        assert context is source.SSL_CONTEXT
         return FakeResponse(contents.pop(0))
 
     monkeypatch.setattr(source, "urlopen", fake_urlopen)
@@ -118,8 +121,9 @@ def test_doi_resolves_crossref_pdf_and_saves_source_metadata(tmp_path: Path, mon
         }
     }
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         requested_urls.append(request.full_url)
+        assert context is source.SSL_CONTEXT
         if "api.crossref.org" in request.full_url:
             return FakeResponse(json.dumps(crossref_payload).encode("utf-8"))
         return FakeResponse(b"%PDF-1.7\ntest")
@@ -155,8 +159,9 @@ def test_doi_prefers_unpaywall_pdf_when_email_is_configured(tmp_path: Path, monk
         "oa_locations": [],
     }
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         requested_urls.append(request.full_url)
+        assert context is source.SSL_CONTEXT
         if "api.crossref.org" in request.full_url:
             return FakeResponse(json.dumps(crossref_payload).encode("utf-8"))
         if "api.unpaywall.org" in request.full_url:

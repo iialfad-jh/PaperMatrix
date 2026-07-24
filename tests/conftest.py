@@ -5,8 +5,6 @@ import shutil
 import stat
 from pathlib import Path
 
-collect_ignore = ["test_api.py"]
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PYTEST_ARTIFACT_DIRS = (
     PROJECT_ROOT / ".pytest_cache",

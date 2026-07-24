@@ -72,6 +72,7 @@ class OpenAILLMClient:
         base_url: str | None = None,
         api_mode: str | None = None,
         language: str = "zh",
+        max_retries: int = 2,
     ) -> None:
         from openai import OpenAI
 
@@ -80,7 +81,10 @@ class OpenAILLMClient:
         self.api_mode = config["api_mode"]
         self.language = config["language"]
 
-        client_kwargs = {"api_key": api_key or os.getenv("OPENAI_API_KEY")}
+        client_kwargs = {
+            "api_key": api_key or os.getenv("OPENAI_API_KEY"),
+            "max_retries": max_retries,
+        }
         self.base_url = config["base_url"]
         if self.base_url:
             client_kwargs["base_url"] = self.base_url

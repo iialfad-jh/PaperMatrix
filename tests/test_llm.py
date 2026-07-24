@@ -45,10 +45,11 @@ def test_openai_client_reads_base_url_from_environment(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "relay-key")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.dwai.cloud/v1")
 
-    OpenAILLMClient()
+    OpenAILLMClient(max_retries=4)
 
     kwargs = FakeOpenAI.instances[0].kwargs
     assert kwargs["api_key"] == "relay-key"
+    assert kwargs["max_retries"] == 4
     assert kwargs["base_url"] == "https://api.dwai.cloud/v1"
     assert kwargs["default_headers"]["Accept"] == "application/json"
     assert "Mozilla/5.0" in kwargs["default_headers"]["User-Agent"]

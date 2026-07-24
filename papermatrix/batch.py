@@ -42,6 +42,7 @@ def resolve_source_list(
     sources_file: str | Path,
     force: bool = False,
     fail_fast: bool = False,
+    retries: int = 2,
 ) -> tuple[list[Path], dict]:
     download_path = Path(download_dir)
     preexisting_downloads = {path.resolve() for path in download_path.glob("*.pdf")}
@@ -75,7 +76,7 @@ def resolve_source_list(
         seen_sources[canonical] = int(entry["line"])
 
         try:
-            paths = resolve_pdf_paths(resolved_source, download_path, force=force)
+            paths = resolve_pdf_paths(resolved_source, download_path, force=force, retries=retries)
             if not paths:
                 raise SourceError(f"No PDF files found for source: {raw_source}")
             unique_paths = []
@@ -146,6 +147,7 @@ def resolve_source_list(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "force": force,
         "fail_fast": fail_fast,
+        "retries": retries,
         "stopped_early": stopped_early,
         "summary": summary,
         "items": items,

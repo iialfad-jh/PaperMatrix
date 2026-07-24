@@ -11,7 +11,8 @@ dependencies = [
     "pymupdf",
     "pydantic",
     "pandas",
-    "openai"
+    "openai",
+    "certifi"
 ]
 
 [project.optional-dependencies]
@@ -25,6 +26,9 @@ papermatrix = "papermatrix.cli:app"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--basetemp=.pytest_tmp"]
+markers = [
+    "integration: opt-in tests that call real external services",
+]
 
 [tool.setuptools.packages.find]
 include = ["papermatrix*"]

@@ -3,9 +3,10 @@
 __pycache__/
 .pytest_cache/
 .pytest-tmp/
+.pytest_tmp/
+build/
 .papermatrix/
 matrix.md
 matrix.csv
 matrix.evidence.md
 papers/
-tests/test_api.py

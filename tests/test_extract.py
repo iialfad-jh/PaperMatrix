@@ -32,3 +32,13 @@ def test_validate_extract_accepts_dynamic_fields_object():
 
     assert extract.get_field("input").value == "early images"
     assert extract.get_field("output").evidence[0].pages == [2]
+
+
+def test_validate_extract_uses_the_requested_paper_id():
+    extract = validate_extract(
+        {"paper_id": "hallucinated-id", "title": "Paper One", "fields": {}},
+        paper_id="stable-id",
+        field_names=["problem"],
+    )
+
+    assert extract.paper_id == "stable-id"

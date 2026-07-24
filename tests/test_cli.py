@@ -13,9 +13,9 @@ from papermatrix.schema import Evidence, ExtractedField, PaperExtract, field_spe
 runner = CliRunner()
 
 
-def make_extract(title: str, problem: str) -> PaperExtract:
+def make_extract(title: str, problem: str, paper_id: str = "paper") -> PaperExtract:
     return PaperExtract(
-        paper_id="paper",
+        paper_id=paper_id,
         title=title,
         problem=ExtractedField(value=problem, evidence=[Evidence(chunk_id="paper_c0", pages=[1])]),
         method=ExtractedField(value="unknown"),
@@ -262,8 +262,8 @@ def test_cli_resolves_remote_source_into_download_cache(tmp_path: Path, monkeypa
     out = tmp_path / "matrix.md"
     calls = []
 
-    def fake_resolve_pdf_paths(source, download_dir, force=False):
-        calls.append((source, download_dir, force))
+    def fake_resolve_pdf_paths(source, download_dir, force=False, retries=2):
+        calls.append((source, download_dir, force, retries))
         return [downloaded_pdf]
 
     class FakeOpenAILLMClient:
@@ -276,13 +276,13 @@ def test_cli_resolves_remote_source_into_download_cache(tmp_path: Path, monkeypa
     monkeypatch.setattr(
         cli,
         "extract_paper",
-        lambda paper_id, *_args, **_kwargs: make_extract("Remote Paper", "remote problem"),
+        lambda paper_id, *_args, **_kwargs: make_extract("Remote Paper", "remote problem", paper_id),
     )
 
     result = runner.invoke(cli.app, ["arxiv:2401.12345", "--out", str(out), "--language", "en"])
 
     assert result.exit_code == 0, result.output
-    assert calls == [("arxiv:2401.12345", tmp_path / ".papermatrix" / "downloads", False)]
+    assert calls == [("arxiv:2401.12345", tmp_path / ".papermatrix" / "downloads", False, 2)]
     assert "Remote Paper" in out.read_text(encoding="utf-8")
 
 
@@ -427,6 +427,135 @@ def test_cli_fail_fast_writes_report_and_stops_before_processing(tmp_path: Path,
     assert report["stopped_early"] is True
     assert report["summary"]["failed"] == 1
     assert report["summary"]["skipped"] == 1
+
+
+def test_cli_continues_after_one_pdf_fails_and_writes_run_report(tmp_path: Path, monkeypatch):
+    papers_dir = tmp_path / "papers"
+    papers_dir.mkdir()
+    (papers_dir / "a.pdf").write_bytes(b"%PDF-1.4\n")
+    (papers_dir / "b.pdf").write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "matrix.md"
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            pass
+
+    def fake_read_pdf_pages(path):
+        if path.name == "a.pdf":
+            raise OSError("damaged PDF")
+        return [{"page": 1, "text": "The second paper can be processed."}]
+
+    def fake_extract_paper(paper_id, *_args, **_kwargs):
+        return PaperExtract(
+            paper_id=paper_id,
+            title="Second Paper",
+            fields={"problem": ExtractedField(value="working paper")},
+        )
+
+    monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
+    monkeypatch.setattr(cli, "read_pdf_pages", fake_read_pdf_pages)
+    monkeypatch.setattr(cli, "extract_paper", fake_extract_paper)
+
+    result = runner.invoke(cli.app, [str(papers_dir), "--out", str(out), "--language", "en"])
+
+    assert result.exit_code == 0, result.output
+    assert "Paper failed: a.pdf | damaged PDF" in result.output
+    assert "Second Paper" in out.read_text(encoding="utf-8")
+    report = json.loads((tmp_path / ".papermatrix" / "run-report.json").read_text(encoding="utf-8"))
+    items = {item["paper_id"]: item for item in report["items"]}
+    assert items["a"]["status"] == "pdf_failed"
+    assert items["b"]["status"] == "exported"
+    assert report["summary"]["pdf_failed"] == 1
+    assert report["summary"]["exported"] == 1
+
+
+def test_cli_continues_after_one_llm_call_fails(tmp_path: Path, monkeypatch):
+    papers_dir = tmp_path / "papers"
+    papers_dir.mkdir()
+    (papers_dir / "a.pdf").write_bytes(b"%PDF-1.4\n")
+    (papers_dir / "b.pdf").write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "matrix.md"
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            pass
+
+    def fake_extract_paper(paper_id, *_args, **_kwargs):
+        if paper_id == "a":
+            raise RuntimeError("provider rejected request")
+        return PaperExtract(
+            paper_id=paper_id,
+            title="Recovered Batch Paper",
+            fields={"problem": ExtractedField(value="batch isolation")},
+        )
+
+    monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
+    monkeypatch.setattr(cli, "read_pdf_pages", lambda _path: [{"page": 1, "text": "Paper text."}])
+    monkeypatch.setattr(cli, "extract_paper", fake_extract_paper)
+
+    result = runner.invoke(cli.app, [str(papers_dir), "--out", str(out), "--language", "en"])
+
+    assert result.exit_code == 0, result.output
+    report = json.loads((tmp_path / ".papermatrix" / "run-report.json").read_text(encoding="utf-8"))
+    items = {item["paper_id"]: item for item in report["items"]}
+    assert items["a"]["status"] == "llm_failed"
+    assert items["a"]["error"]["type"] == "RuntimeError"
+    assert items["b"]["status"] == "exported"
+    assert report["summary"]["llm_failed"] == 1
+
+
+def test_cli_retry_failed_only_processes_failed_papers(tmp_path: Path, monkeypatch):
+    papers_dir = tmp_path / "papers"
+    papers_dir.mkdir()
+    (papers_dir / "a.pdf").write_bytes(b"%PDF-1.4\n")
+    (papers_dir / "b.pdf").write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "matrix.md"
+    calls = []
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            pass
+
+    def first_extract(paper_id, *_args, **_kwargs):
+        calls.append(paper_id)
+        if paper_id == "a":
+            raise RuntimeError("temporary provider failure")
+        return PaperExtract(
+            paper_id=paper_id,
+            title=f"Paper {paper_id.upper()}",
+            fields={"problem": ExtractedField(value=f"problem {paper_id}")},
+        )
+
+    monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
+    monkeypatch.setattr(cli, "read_pdf_pages", lambda path: [{"page": 1, "text": f"Text for {path.stem}."}])
+    monkeypatch.setattr(cli, "extract_paper", first_extract)
+
+    first = runner.invoke(cli.app, [str(papers_dir), "--out", str(out), "--language", "en", "--retries", "0"])
+    assert first.exit_code == 0, first.output
+    assert calls == ["a", "b"]
+
+    calls.clear()
+
+    def retry_extract(paper_id, *_args, **_kwargs):
+        calls.append(paper_id)
+        return PaperExtract(
+            paper_id=paper_id,
+            title=f"Paper {paper_id.upper()}",
+            fields={"problem": ExtractedField(value=f"problem {paper_id}")},
+        )
+
+    monkeypatch.setattr(cli, "extract_paper", retry_extract)
+    report_path = tmp_path / ".papermatrix" / "run-report.json"
+    retried = runner.invoke(cli.app, ["--retry-failed", str(report_path), "--retries", "0"])
+
+    assert retried.exit_code == 0, retried.output
+    assert calls == ["a"]
+    matrix_text = out.read_text(encoding="utf-8")
+    assert "Paper A" in matrix_text
+    assert "Paper B" in matrix_text
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["summary"]["exported"] == 2
+    assert report["summary"]["llm_failed"] == 0
 
 
 def test_duplicate_pdf_stems_receive_unique_paper_ids(tmp_path: Path):

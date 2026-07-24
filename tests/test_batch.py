@@ -53,8 +53,9 @@ def test_resolve_source_list_deduplicates_canonical_arxiv_sources(tmp_path: Path
     downloaded_pdf = tmp_path / "downloads" / "arxiv-2401.12345.pdf"
     calls = []
 
-    def fake_resolve(source, download_dir, force=False):
+    def fake_resolve(source, download_dir, force=False, retries=2):
         calls.append(source)
+        assert retries == 2
         downloaded_pdf.parent.mkdir()
         downloaded_pdf.write_bytes(b"%PDF-")
         return [downloaded_pdf]

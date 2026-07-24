@@ -97,6 +97,20 @@ PaperMatrix normalizes and deduplicates arXiv, DOI, URL, and local-path inputs. 
 papermatrix --sources-file sources.txt --out matrix.md --fail-fast
 ```
 
+Paper processing is isolated too: a damaged PDF or failed LLM request is recorded while the remaining papers continue. Transient download, metadata, and LLM API failures are retried twice by default; permanent request errors are not retried. Change the limit with `--retries`:
+
+```powershell
+papermatrix --sources-file sources.txt --out matrix.md --retries 4
+```
+
+Every processing run writes `.papermatrix/run-report.json` with each paper's status, completed stages, retry limit, and error summary. Retry only `pdf_failed`, `llm_failed`, or `skipped` papers while reusing the successful extracts and the original run configuration:
+
+```powershell
+papermatrix --retry-failed .papermatrix/run-report.json
+```
+
+`--retry-failed` covers papers that already have a resolved local PDF path. Source-import failures remain in `import-report.json`; rerun the original `--sources-file` command to retry those sources while downloaded files remain cached.
+
 For English matrix output:
 
 ```bash
@@ -172,6 +186,7 @@ matrix.csv
 matrix.evidence.md
 .papermatrix/
   import-report.json
+  run-report.json
   downloads/
     arxiv-2401.12345.pdf
     arxiv-2401.12345.source.json
@@ -195,6 +210,15 @@ To ignore cached extracts and rerun extraction:
 ```bash
 papermatrix ./papers --out matrix.md --force
 ```
+
+The default test suite is fully offline. Real-service checks are opt-in:
+
+```powershell
+$env:PAPERMATRIX_RUN_INTEGRATION="1"
+python -m pytest -m integration
+```
+
+The arXiv download check runs with that flag. The tiny LLM check additionally requires `PAPERMATRIX_RUN_LLM_INTEGRATION=1` and `OPENAI_API_KEY`.
 
 ## Output Language
 
