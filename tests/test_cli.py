@@ -255,6 +255,59 @@ def test_cli_force_ignores_cached_extract(tmp_path: Path, monkeypatch):
     assert load_cache_metadata(tmp_path / ".papermatrix" / "paper_meta.json") is not None
 
 
+def test_cli_passes_table_chunks_to_extraction_and_evidence(tmp_path: Path, monkeypatch):
+    papers_dir = tmp_path / "papers"
+    papers_dir.mkdir()
+    (papers_dir / "paper.pdf").write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "matrix.md"
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            pass
+
+    def fake_read_pdf_pages(_path):
+        return [
+            {
+                "page": 4,
+                "text": "Experimental results.",
+                "tables": [
+                    {
+                        "table_index": 0,
+                        "table_count": 1,
+                        "strategy": "lines",
+                        "bbox": [10, 20, 100, 200],
+                        "header": ["Model", "Accuracy"],
+                        "rows": [["Baseline", "88.1"], ["Ours", "92.4"]],
+                    }
+                ],
+            }
+        ]
+
+    def fake_extract_paper(paper_id, selected_chunks, *_args, **_kwargs):
+        table_chunk = next(chunk for chunk in selected_chunks if chunk.get("kind") == "table")
+        return PaperExtract(
+            paper_id=paper_id,
+            title="Table Paper",
+            fields={
+                "result": ExtractedField(
+                    value="Our model achieves 92.4 accuracy",
+                    evidence=[Evidence(chunk_id=table_chunk["chunk_id"], pages=[4])],
+                )
+            },
+        )
+
+    monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
+    monkeypatch.setattr(cli, "read_pdf_pages", fake_read_pdf_pages)
+    monkeypatch.setattr(cli, "extract_paper", fake_extract_paper)
+
+    result = runner.invoke(cli.app, [str(papers_dir), "--out", str(out), "--language", "en"])
+
+    assert result.exit_code == 0, result.output
+    evidence_text = out.with_suffix(".evidence.md").read_text(encoding="utf-8")
+    assert "`paper_t0`" in evidence_text
+    assert "> | Ours | 92.4 |" in evidence_text
+
+
 def test_cli_resolves_remote_source_into_download_cache(tmp_path: Path, monkeypatch):
     downloaded_pdf = tmp_path / ".papermatrix" / "downloads" / "arxiv-2401.12345.pdf"
     downloaded_pdf.parent.mkdir(parents=True)

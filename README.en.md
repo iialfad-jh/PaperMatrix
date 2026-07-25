@@ -197,13 +197,17 @@ matrix.evidence.md
   paper1_meta.json
 ```
 
-`matrix.evidence.md` lists each non-unknown field value, evidence pages, chunk id, and the most relevant local source sentences so you can quickly check whether the LLM extracted the right information.
+`matrix.evidence.md` lists each non-unknown field value, evidence pages, chunk id, and the most relevant local source sentences or table rows so you can quickly check whether the LLM extracted the right information.
+
+PaperMatrix detects ruled PDF tables first and falls back to text-based table detection for borderless layouts. Tables are stored as structured `table` chunks with headers, rows, bounding boxes, and page numbers. Matching first/last tables on adjacent pages are merged when their headers match, and large tables are split only between complete rows. Table chunks receive extra relevance for dataset, metric, result, and similarly named custom fields. If table detection fails, normal page-text extraction continues.
 
 On repeated runs, PaperMatrix reuses existing `.papermatrix/*_extract.json` and `.papermatrix/*_meta.json` files when the metadata still matches, then skips PDF reading, chunking, and LLM calls for those papers. Metadata checks the PDF name, size, modification time, output language, model, API mode, base URL, `--max-chars`, `--max-chunks`, preset name, and complete extraction field configuration:
 
 ```bash
 papermatrix ./papers --out matrix.md
 ```
+
+The table-aware release raises the cache format version, so extracts created by older versions are rebuilt once and then cached normally.
 
 To ignore cached extracts and rerun extraction:
 
@@ -232,6 +236,7 @@ In Chinese mode, the LLM is instructed to summarize extracted field values in Si
 ## Current Limits
 
 - No Web UI.
-- No Zotero, chat QA, or table recognition.
+- No Zotero or chat QA.
+- Scanned or image-only tables require OCR and are not recognized yet.
 - Extraction only uses selected chunks from each paper.
 - Fields without explicit evidence are normalized to `unknown`; Chinese matrix output displays them as `未知`.

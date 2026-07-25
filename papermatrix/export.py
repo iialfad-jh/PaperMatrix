@@ -220,6 +220,48 @@ def _evidence_excerpt(
     return "\n".join(excerpt_lines)
 
 
+def _markdown_table_row(cells: list[str]) -> str:
+    values = [re.sub(r"\s+", " ", str(cell)).strip().replace("|", r"\|") for cell in cells]
+    return "| " + " | ".join(values) + " |"
+
+
+def _table_evidence_excerpt(
+    chunk: dict,
+    field_name: str,
+    field_value: str,
+    max_chars: int,
+    max_rows: int = 3,
+    field_spec: FieldSpec | None = None,
+) -> str:
+    table = chunk.get("table") or {}
+    header = [str(cell) for cell in table.get("header", [])]
+    rows = [[str(cell) for cell in row] for row in table.get("rows", [])]
+    if not header or not rows:
+        return _short_excerpt(str(chunk.get("text", "")), max_chars)
+
+    scored = [
+        (
+            _sentence_score(" ".join(header + row), field_name, field_value, field_spec=field_spec),
+            index,
+            row,
+        )
+        for index, row in enumerate(rows)
+    ]
+    ranked = sorted(scored, key=lambda item: (item[0], -item[1]), reverse=True)
+    selected = [item for item in ranked[:max_rows] if item[0] > 0] or ranked[: min(2, len(ranked))]
+    selected.sort(key=lambda item: item[1])
+
+    lines = [_markdown_table_row(header), _markdown_table_row(["---"] * len(header))]
+    for _score, _index, row in selected:
+        candidate = lines + [_markdown_table_row(row)]
+        if len("\n".join(candidate)) > max_chars:
+            break
+        lines = candidate
+    if len(lines) == 2:
+        return _short_excerpt(_markdown_table_row(selected[0][2]), max_chars)
+    return "\n".join(lines)
+
+
 def _quote_markdown(text: str) -> list[str]:
     if not text:
         return []
@@ -336,12 +378,22 @@ def export_evidence(
                 )
                 chunk = chunk_index.get(evidence.chunk_id)
                 excerpt = (
-                    _evidence_excerpt(
-                        str(chunk.get("text", "")),
-                        field_name,
-                        field.value,
-                        excerpt_chars,
-                        field_spec=field_specs_by_name.get(field_name),
+                    (
+                        _table_evidence_excerpt(
+                            chunk,
+                            field_name,
+                            field.value,
+                            excerpt_chars,
+                            field_spec=field_specs_by_name.get(field_name),
+                        )
+                        if chunk.get("kind") == "table"
+                        else _evidence_excerpt(
+                            str(chunk.get("text", "")),
+                            field_name,
+                            field.value,
+                            excerpt_chars,
+                            field_spec=field_specs_by_name.get(field_name),
+                        )
                     )
                     if chunk
                     else ""

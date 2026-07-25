@@ -65,3 +65,21 @@ def test_selector_uses_configured_field_keywords():
     selected_ids = {chunk["chunk_id"] for chunk in selected}
 
     assert "paper_c8" in selected_ids
+
+
+def test_selector_prioritizes_numeric_table_for_metric_and_result():
+    chunks = [
+        {"chunk_id": f"paper_c{i}", "paper_id": "paper", "pages": [i + 1], "text": f"neutral section {i}"}
+        for i in range(14)
+    ]
+    chunks[9] = {
+        "chunk_id": "paper_t0",
+        "paper_id": "paper",
+        "pages": [10],
+        "kind": "table",
+        "text": "| Model | Accuracy |\n| --- | --- |\n| Ours | 92.4 |",
+    }
+
+    selected = select_chunks_for_extraction(chunks, max_chunks=4, field_names=["metric", "result"])
+
+    assert "paper_t0" in {chunk["chunk_id"] for chunk in selected}

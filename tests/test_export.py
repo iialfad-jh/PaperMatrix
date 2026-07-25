@@ -174,3 +174,44 @@ def test_evidence_export_marks_missing_chunk_text(tmp_path: Path):
     text = output.read_text(encoding="utf-8")
     assert "- **chunk:** `paper1_c0`; **pages:** p.1" in text
     assert "> Chunk text unavailable." in text
+
+
+def test_evidence_export_includes_relevant_table_rows(tmp_path: Path):
+    extract = PaperExtract(
+        paper_id="paper1",
+        title="Table Paper",
+        fields={
+            "result": ExtractedField(
+                value="Our model achieves 92.4 accuracy",
+                evidence=[Evidence(chunk_id="paper1_t0", pages=[4])],
+            )
+        },
+    )
+    chunks_by_paper = {
+        "paper1": [
+            {
+                "chunk_id": "paper1_t0",
+                "paper_id": "paper1",
+                "pages": [4],
+                "kind": "table",
+                "text": "Table from page(s) 4",
+                "table": {
+                    "header": ["Model", "Accuracy"],
+                    "rows": [["Baseline", "88.1"], ["Ours", "92.4"], ["Ablation", "84.0"]],
+                },
+            }
+        ]
+    }
+
+    output = tmp_path / "matrix.evidence.md"
+    export_evidence(
+        [extract],
+        output,
+        chunks_by_paper=chunks_by_paper,
+        language="en",
+        field_names=["result"],
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "> | Model | Accuracy |" in text
+    assert "> | Ours | 92.4 |" in text

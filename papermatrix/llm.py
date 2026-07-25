@@ -13,6 +13,8 @@ Do not use external knowledge.
 Do not guess.
 If a field is not explicitly supported, return "unknown".
 For every non-unknown field, provide evidence with chunk_id and pages.
+Chunks with kind "table" contain Markdown table rows.
+Prefer their exact numeric values for datasets, metrics, baselines, and results.
 """
 LANGUAGE_ALIASES = {
     "zh": "zh",
@@ -121,6 +123,7 @@ class OpenAILLMClient:
                 {
                     "chunk_id": chunk["chunk_id"],
                     "pages": chunk["pages"],
+                    "kind": chunk.get("kind", "text"),
                     "text": chunk["text"],
                 }
                 for chunk in chunks

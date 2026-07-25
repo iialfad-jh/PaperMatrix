@@ -147,3 +147,28 @@ def test_openai_client_includes_field_descriptions_and_keywords(monkeypatch):
     input_text = FakeOpenAI.instances[0].responses.calls[0]["input"]
     assert "crop_species: Extract the crop or plant species studied in the paper." in input_text
     assert "Keywords: crop, species, maize" in input_text
+
+
+def test_openai_client_marks_table_chunks_in_payload(monkeypatch):
+    install_fake_openai(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "relay-key")
+
+    client = OpenAILLMClient(model="gpt-test", language="en")
+    client.extract_json(
+        "paper",
+        [
+            {
+                "chunk_id": "paper_t0",
+                "paper_id": "paper",
+                "pages": [3],
+                "kind": "table",
+                "text": "| Model | Accuracy |\n| Ours | 92.4 |",
+            }
+        ],
+        field_names=["result"],
+    )
+
+    user_content = FakeOpenAI.instances[0].chat.completions.calls[0]["messages"][1]["content"]
+    assert '"kind": "table"' in user_content
+    system_content = FakeOpenAI.instances[0].chat.completions.calls[0]["messages"][0]["content"]
+    assert "Prefer their exact numeric values" in system_content

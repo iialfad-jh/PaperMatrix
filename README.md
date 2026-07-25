@@ -197,13 +197,17 @@ matrix.evidence.md
   paper1_meta.json
 ```
 
-`matrix.evidence.md` 会列出每个非未知字段的抽取值、证据页码、chunk id 和最相关的本地原文句子，方便快速复核 LLM 是否摘对。
+`matrix.evidence.md` 会列出每个非未知字段的抽取值、证据页码、chunk id，以及最相关的本地原文句子或表格行，方便快速复核 LLM 是否摘对。
+
+PaperMatrix 会优先检测带边框的 PDF 表格，对无边框布局再尝试文本表格检测。表格会保存成结构化 `table` chunk，保留表头、数据行、坐标和页码；相邻页首尾表格的表头一致时会自动合并，大表只在完整数据行之间拆分。数据集、指标、结果以及名称相近的自定义字段会优先选择相关表格。表格检测失败时，普通页面文本抽取仍会继续。
 
 再次运行时，如果 `.papermatrix/*_extract.json` 和 `.papermatrix/*_meta.json` 已存在且元数据匹配，PaperMatrix 会默认复用缓存的抽取结果，跳过对应 PDF 的读取、切块和 LLM 调用。元数据会检查 PDF 文件名、大小、修改时间、输出语言、模型、API 模式、base URL、`--max-chars`、`--max-chunks`、预设名称和完整抽取字段配置：
 
 ```bash
 papermatrix ./papers --out matrix.md
 ```
+
+表格感知版本提升了缓存格式版本，因此旧版本生成的抽取缓存会自动重建一次，之后继续正常复用。
 
 如果需要忽略缓存并重新抽取：
 
@@ -232,6 +236,7 @@ python -m pytest -m integration
 ## 当前限制
 
 - 没有 Web UI。
-- 不支持 Zotero、对话问答或表格识别。
+- 不支持 Zotero 或对话问答。
+- 扫描件或纯图片表格仍需要 OCR，目前无法识别。
 - 抽取只使用每篇论文中被选中的片段。
 - 缺少明确证据的字段会被规范化为 `unknown`，最终中文矩阵中显示为 `未知`。

@@ -29,6 +29,11 @@ SECTION_BONUS = {
     "result": 3.5,
     "limitation": 4.0,
 }
+TABLE_BONUS = {
+    "dataset": 2.5,
+    "metric": 4.0,
+    "result": 4.0,
+}
 
 
 def _looks_like_section_heading(text: str, heading: str) -> bool:
@@ -105,6 +110,10 @@ def _score_chunk(
     score = _keyword_score(text, _field_keywords(field, field_specs=field_specs))
     score += _section_score(text, field)
     score += _position_bonus(field, position)
+    if chunk.get("kind") == "table":
+        score += TABLE_BONUS.get(field, 0.5)
+        if field in {"metric", "result"} and re.search(r"\d", text):
+            score += 2.0
     if _is_references_chunk(chunk):
         score -= 100.0
     return score

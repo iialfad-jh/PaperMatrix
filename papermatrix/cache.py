@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 
 def build_cache_metadata(
