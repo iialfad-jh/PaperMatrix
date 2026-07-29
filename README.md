@@ -103,13 +103,21 @@ papermatrix --sources-file sources.txt --out matrix.md --fail-fast
 papermatrix --sources-file sources.txt --out matrix.md --retries 4
 ```
 
-每次处理都会写入 `.papermatrix/run-report.json`，其中保留每篇论文的状态、已完成阶段、重试上限和错误摘要。下面的命令只重新处理状态为 `pdf_failed`、`llm_failed` 或 `skipped` 的论文，同时复用成功结果和原运行配置：
+每次处理都会写入 `.papermatrix/run-report.json`，其中保留每篇论文的状态、已完成阶段、重试上限和错误摘要。下面的命令只重新处理状态为 `pdf_failed`、`llm_failed`、`skipped` 或 `cancelled` 的论文，同时复用成功结果和原运行配置：
 
 ```powershell
 papermatrix --retry-failed .papermatrix/run-report.json
 ```
 
 `--retry-failed` 适用于已经解析出本地 PDF 路径的论文。来源导入失败仍记录在 `import-report.json` 中；重新执行原来的 `--sources-file` 命令即可重试这些来源，已下载文件仍会命中缓存。
+
+对于需要反复运行的长期任务，可以用稳定项目 ID 隔离缓存、下载文件、抽取结果和运行报告：
+
+```powershell
+papermatrix ./papers --out matrix.md --project-id literature-review-2026
+```
+
+项目工作区会写入 `.papermatrix/projects/literature-review-2026/`。不传 `--project-id` 时仍使用原来的 `.papermatrix/`，保持向后兼容。重试命令会从运行报告恢复工作区，因此 `--retry-failed` 与 `--project-id` 不同时使用。
 
 如果需要英文矩阵：
 
@@ -142,6 +150,12 @@ papermatrix --show-preset plant-growth
 `general` 适合一般实验论文，`machine-learning` 增加模型输入输出和基线，`plant-growth` 增加作物、发育阶段、处理与环境，`survey` 面向综述的检索范围、分类体系和研究空白。`--preset` 与 `--fields` 不能同时使用；需要调整预设时，可参考 `--show-preset` 的输出创建自己的 fields JSON。
 
 字段名会作为内部 JSON key 使用，请使用英文字母、数字和下划线，例如 `model_input`、`crop_species`、`future_output`。默认字段仍然是 `problem,method,dataset,metric,result,limitation`。
+
+## 管线 API
+
+CLI 已改为调用 `papermatrix.pipeline` 中与终端无关的处理引擎。Python 前端可以创建 `PipelineConfig`，调用 `run_pipeline(...)`，并从 `PipelineResult` 获取输出路径和完整运行报告。
+
+通过 `progress_callback` 可以接收结构化 `ProgressEvent`，覆盖运行、PDF、LLM、论文、缓存和导出阶段。传入 `CancellationToken` 后，任务会在阶段之间安全停止；已经完成的抽取结果仍可复用，尚未完成的论文会记录为 `cancelled`，之后可用 `--retry-failed` 续跑。即使 UI 进度监听器断开并抛出异常，也不会中止后台处理任务。
 
 如果需要更明确的列名、字段说明和选块关键词，也可以传入 JSON 配置文件：
 

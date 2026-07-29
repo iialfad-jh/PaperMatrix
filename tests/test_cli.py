@@ -621,3 +621,37 @@ def test_duplicate_pdf_stems_receive_unique_paper_ids(tmp_path: Path):
 
     assert len(set(paper_ids)) == 2
     assert all(paper_id.startswith("paper-") for paper_id in paper_ids)
+
+
+def test_cli_project_id_uses_isolated_workspace(tmp_path: Path, monkeypatch):
+    papers_dir = tmp_path / "papers"
+    papers_dir.mkdir()
+    (papers_dir / "paper.pdf").write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "matrix.md"
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            pass
+
+    def fake_extract_paper(paper_id, *_args, **_kwargs):
+        return PaperExtract(
+            paper_id=paper_id,
+            title="Project Paper",
+            fields={"problem": ExtractedField(value="isolated workspace")},
+        )
+
+    monkeypatch.setattr(cli, "OpenAILLMClient", FakeOpenAILLMClient)
+    monkeypatch.setattr(cli, "read_pdf_pages", lambda _path: [{"page": 1, "text": "Project text."}])
+    monkeypatch.setattr(cli, "extract_paper", fake_extract_paper)
+
+    result = runner.invoke(
+        cli.app,
+        [str(papers_dir), "--out", str(out), "--language", "en", "--project-id", "review_2026"],
+    )
+
+    assert result.exit_code == 0, result.output
+    project_dir = tmp_path / ".papermatrix" / "projects" / "review_2026"
+    assert (project_dir / "paper_extract.json").exists()
+    report = json.loads((project_dir / "run-report.json").read_text(encoding="utf-8"))
+    assert report["config"]["project_id"] == "review_2026"
+    assert not (tmp_path / ".papermatrix" / "paper_extract.json").exists()

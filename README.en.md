@@ -103,13 +103,21 @@ Paper processing is isolated too: a damaged PDF or failed LLM request is recorde
 papermatrix --sources-file sources.txt --out matrix.md --retries 4
 ```
 
-Every processing run writes `.papermatrix/run-report.json` with each paper's status, completed stages, retry limit, and error summary. Retry only `pdf_failed`, `llm_failed`, or `skipped` papers while reusing the successful extracts and the original run configuration:
+Every processing run writes `.papermatrix/run-report.json` with each paper's status, completed stages, retry limit, and error summary. Retry only `pdf_failed`, `llm_failed`, `skipped`, or `cancelled` papers while reusing the successful extracts and the original run configuration:
 
 ```powershell
 papermatrix --retry-failed .papermatrix/run-report.json
 ```
 
 `--retry-failed` covers papers that already have a resolved local PDF path. Source-import failures remain in `import-report.json`; rerun the original `--sources-file` command to retry those sources while downloaded files remain cached.
+
+Use a stable project id to isolate caches, downloads, extracts, and run reports for recurring work:
+
+```powershell
+papermatrix ./papers --out matrix.md --project-id literature-review-2026
+```
+
+The workspace is stored under `.papermatrix/projects/literature-review-2026/`. The default command without `--project-id` continues to use `.papermatrix/`. A retry command reads the workspace from its run report, so `--retry-failed` and `--project-id` are intentionally not combined.
 
 For English matrix output:
 
@@ -142,6 +150,12 @@ papermatrix --show-preset plant-growth
 `general` fits typical experimental papers, `machine-learning` adds model inputs, outputs, and baselines, `plant-growth` adds crop, growth-stage, treatment, and environment fields, and `survey` focuses on review scope, taxonomy, and research gaps. `--preset` cannot be combined with `--fields`; use the output from `--show-preset` as a starting point for a custom fields JSON file.
 
 Field names are used as internal JSON keys, so use English letters, numbers, and underscores, such as `model_input`, `crop_species`, and `future_output`. The default fields remain `problem,method,dataset,metric,result,limitation`.
+
+## Pipeline API
+
+The CLI delegates paper processing to the UI-independent engine in `papermatrix.pipeline`. A Python frontend can build a `PipelineConfig`, call `run_pipeline(...)`, and receive a `PipelineResult` containing output paths and the complete run report.
+
+Pass a callback to `progress_callback` to receive structured `ProgressEvent` values for run, PDF, LLM, paper, cache, and export stages. Pass a `CancellationToken` to stop safely between stages; completed extracts remain reusable, pending papers are recorded as `cancelled`, and they can be resumed with `--retry-failed`. Exceptions raised by a disconnected progress listener do not abort the processing task.
 
 For clearer labels, field descriptions, and chunk-selection keywords, pass a JSON config file:
 

@@ -8,16 +8,20 @@ from pathlib import Path
 import typer
 
 from .batch import load_sources_file, resolve_source_list, save_import_report
-from .cache import build_cache_metadata, is_cache_metadata_current, load_cache_metadata, save_cache_metadata
-from .chunk import chunk_pages, load_chunks_jsonl, save_chunks_jsonl
-from .export import export_evidence, export_matrix, normalize_language
-from .extract import extract_paper, load_extract_json, save_extract_json
+from .export import normalize_language
+from .extract import extract_paper
 from .llm import OpenAILLMClient, resolve_openai_config
 from .pdf import read_pdf_pages
+from .pipeline import (
+    PipelineConfig,
+    PipelineError,
+    ProgressEvent,
+    resolve_project_dir,
+    run_pipeline,
+)
 from .presets import list_presets, load_preset
-from .run_report import create_run_report, failed_items, load_run_report, record_failure, save_run_report
-from .schema import FieldSpec, field_specs_metadata, parse_field_specs
-from .selector import select_chunks_for_extraction
+from .run_report import failed_items, load_run_report
+from .schema import FieldSpec, parse_field_specs
 from .source import SourceError, resolve_pdf_paths
 
 
@@ -42,7 +46,7 @@ CLI_MESSAGES = {
         "source_failed": "Source failed at line {line}: {source} | {error}",
         "fail_fast_stopped": "Stopped after the first source failure because --fail-fast is enabled.",
         "paper_failed": "Paper failed: {filename} | {error}",
-        "run_summary": "Run summary: {exported} exported, {cache_hit} cache hits, {pdf_failed} PDF failures, {llm_failed} LLM failures, {skipped} skipped.",
+        "run_summary": "Run summary: {exported} exported, {cache_hit} cache hits, {pdf_failed} PDF failures, {llm_failed} LLM failures, {skipped} skipped, {cancelled} cancelled.",
     },
     "zh": {
         "config": "LLM 配置：{config}",
@@ -62,7 +66,7 @@ CLI_MESSAGES = {
         "source_failed": "第 {line} 行来源失败：{source} | {error}",
         "fail_fast_stopped": "已启用 --fail-fast，在首个来源失败后停止。",
         "paper_failed": "论文处理失败：{filename} | {error}",
-        "run_summary": "运行汇总：导出 {exported}，缓存命中 {cache_hit}，PDF 失败 {pdf_failed}，LLM 失败 {llm_failed}，跳过 {skipped}。",
+        "run_summary": "运行汇总：导出 {exported}，缓存命中 {cache_hit}，PDF 失败 {pdf_failed}，LLM 失败 {llm_failed}，跳过 {skipped}，取消 {cancelled}。",
     },
 }
 
@@ -100,6 +104,7 @@ def main(
     force: bool = typer.Option(False, "--force", help="Ignore cached extracts and rerun PDF extraction plus LLM calls."),
     fail_fast: bool = typer.Option(False, "--fail-fast", help="Stop after the first source or paper failure."),
     retries: int = typer.Option(2, "--retries", min=0, max=10, help="Retries for transient network and LLM API failures."),
+    project_id: str | None = typer.Option(None, "--project-id", help="Stable project workspace id under .papermatrix/projects."),
     retry_failed: Path | None = typer.Option(
         None,
         "--retry-failed",
@@ -134,6 +139,8 @@ def main(
         raise typer.BadParameter("--retry-failed cannot be combined with SOURCE or --sources-file")
     if retry_failed is not None and (fields or preset or force):
         raise typer.BadParameter("--retry-failed reuses the report fields and cannot be combined with --fields, --preset, or --force")
+    if retry_failed is not None and project_id is not None:
+        raise typer.BadParameter("--retry-failed reuses the report project and cannot be combined with --project-id")
     if fields and preset:
         raise typer.BadParameter("--fields and --preset cannot be used together")
 
@@ -197,20 +204,19 @@ def main(
         )
 
     if retry_state is not None:
-        retry_targets = {item["paper_id"] for item in failed_items(retry_state)}
-        if not retry_targets:
+        if not failed_items(retry_state):
             raise typer.BadParameter("run report contains no failed papers", param_hint="--retry-failed")
-        work_dir = Path(retry_state["config"].get("work_dir", out.parent / ".papermatrix"))
+        stored_config = retry_state["config"]
+        work_dir = Path(stored_config.get("work_dir", out.parent / ".papermatrix"))
+        project_id = stored_config.get("project_id")
         paper_plan = [
             (Path(item["pdf_path"]), str(item["paper_id"]))
             for item in retry_state["items"]
             if item.get("pdf_path") and item.get("paper_id")
         ]
-        run_state = retry_state
-        run_state["config"]["retries"] = retries
         run_report_path = retry_failed
     else:
-        work_dir = out.parent / ".papermatrix"
+        work_dir = resolve_project_dir(out.parent / ".papermatrix", project_id)
         if sources_file is not None:
             try:
                 source_entries = load_sources_file(sources_file)
@@ -253,198 +259,57 @@ def main(
             raise typer.Exit(1)
         paper_ids = _paper_ids_for_paths(pdf_paths)
         paper_plan = list(zip(pdf_paths, paper_ids, strict=True))
-        retry_targets = {paper_id for _, paper_id in paper_plan}
-        run_config = {
-            "out": str(out.resolve()),
-            "work_dir": str(work_dir.resolve()),
-            "language": output_language,
-            "max_chars": max_chars,
-            "max_chunks": max_chunks,
-            "preset": active_preset_name,
-            "fields": field_specs_metadata(field_specs),
-            "llm": llm_config,
-            "retries": retries,
-        }
-        run_state = create_run_report(run_config, paper_plan)
         run_report_path = work_dir / "run-report.json"
 
     if not paper_plan:
         raise typer.BadParameter("run report contains no retryable PDF paths", param_hint="--retry-failed")
-    save_run_report(run_state, run_report_path)
-
-    extracts = []
-    chunks_by_paper = {}
-    report_items = {str(item["paper_id"]): item for item in run_state["items"] if item.get("paper_id")}
-    stopped_processing = False
-
-    for plan_index, (pdf_path, paper_id) in enumerate(paper_plan):
-        item = report_items[paper_id]
-        extract_path = work_dir / f"{paper_id}_extract.json"
-        chunks_path = work_dir / f"{paper_id}_chunks.jsonl"
-        metadata_path = work_dir / f"{paper_id}_meta.json"
-
-        if retry_state is not None and paper_id not in retry_targets:
-            try:
-                extract = load_extract_json(extract_path, paper_id=paper_id, field_names=field_names)
-                extracts.append(extract)
-                if chunks_path.exists():
-                    chunks_by_paper[extract.paper_id] = load_chunks_jsonl(chunks_path)
-                item["cache_hit"] = True
-                _append_stage(item, "cache_hit")
-                continue
-            except (OSError, ValueError, json.JSONDecodeError):
-                retry_targets.add(paper_id)
-
-        item["status"] = "imported"
-        item.pop("error", None)
-        _append_stage(item, "imported")
-        item["llm_max_retries"] = retries
-        if not pdf_path.exists():
-            _record_paper_failure(
-                item,
-                "pdf_failed",
-                FileNotFoundError(f"PDF file not found: {pdf_path}"),
-                output_language,
-            )
-            save_run_report(run_state, run_report_path)
-            if fail_fast:
-                _mark_remaining_skipped(paper_plan[plan_index + 1 :], report_items)
-                stopped_processing = True
-                break
-            continue
-
-        try:
-            current_metadata = build_cache_metadata(
-                pdf_path,
-                language=output_language,
-                llm_config=llm_config,
-                max_chars=max_chars,
-                max_chunks=max_chunks,
-                fields_metadata=field_specs_metadata(field_specs),
-                preset=active_preset_name,
-                paper_id=paper_id,
-            )
-            cache_is_current = is_cache_metadata_current(load_cache_metadata(metadata_path), current_metadata)
-        except OSError as exc:
-            _record_paper_failure(item, "pdf_failed", exc, output_language)
-            save_run_report(run_state, run_report_path)
-            if fail_fast:
-                _mark_remaining_skipped(paper_plan[plan_index + 1 :], report_items)
-                stopped_processing = True
-                break
-            continue
-
-        if extract_path.exists() and not force and cache_is_current:
-            try:
-                typer.echo(_message(output_language, "using_cache", filename=pdf_path.name))
-                extract = load_extract_json(extract_path, paper_id=paper_id, field_names=field_names)
-                if chunks_path.exists():
-                    chunks_by_paper[extract.paper_id] = load_chunks_jsonl(chunks_path)
-                extracts.append(extract)
-                item["status"] = "cache_hit"
-                item["cache_hit"] = True
-                _append_stage(item, "cache_hit")
-                save_run_report(run_state, run_report_path)
-                continue
-            except (OSError, ValueError, json.JSONDecodeError):
-                pass
-        if extract_path.exists() and not force:
-            typer.echo(_message(output_language, "cache_stale", filename=pdf_path.name))
-
-        typer.echo(_message(output_language, "processing", filename=pdf_path.name))
-        try:
-            pages = read_pdf_pages(pdf_path)
-            chunks = chunk_pages(pages, paper_id=paper_id, max_chars=max_chars)
-            save_chunks_jsonl(chunks, chunks_path)
-        except Exception as exc:
-            _record_paper_failure(item, "pdf_failed", exc, output_language)
-            save_run_report(run_state, run_report_path)
-            if fail_fast:
-                _mark_remaining_skipped(paper_plan[plan_index + 1 :], report_items)
-                stopped_processing = True
-                break
-            continue
-
-        selected_chunks = select_chunks_for_extraction(
-            chunks,
-            max_chunks=max_chunks,
-            field_names=field_names,
-            field_specs=field_specs,
-        )
-        try:
-            extract = extract_paper(
-                paper_id,
-                selected_chunks,
-                get_llm_client(),
-                field_names=field_names,
-                field_specs=field_specs,
-            )
-        except Exception as exc:
-            _record_paper_failure(item, "llm_failed", exc, output_language)
-            save_run_report(run_state, run_report_path)
-            if fail_fast:
-                _mark_remaining_skipped(paper_plan[plan_index + 1 :], report_items)
-                stopped_processing = True
-                break
-            continue
-        try:
-            save_extract_json(extract, extract_path)
-            save_cache_metadata(current_metadata, metadata_path)
-        except OSError as exc:
-            _record_paper_failure(item, "pdf_failed", exc, output_language)
-            save_run_report(run_state, run_report_path)
-            if fail_fast:
-                _mark_remaining_skipped(paper_plan[plan_index + 1 :], report_items)
-                stopped_processing = True
-                break
-            continue
-        chunks_by_paper[extract.paper_id] = chunks
-        extracts.append(extract)
-        item["status"] = "extracted"
-        item["cache_hit"] = False
-        _append_stage(item, "extracted")
-        save_run_report(run_state, run_report_path)
-
-    if stopped_processing:
-        save_run_report(run_state, run_report_path)
-    if not extracts:
-        typer.echo(_message(output_language, "run_summary", **run_state["summary"]), err=True)
-        typer.echo(_message(output_language, "wrote", path=run_report_path))
-        raise typer.Exit(1)
 
     try:
-        markdown_path, csv_path = export_matrix(
-            extracts,
-            out,
+        pipeline_config = PipelineConfig(
+            out=out,
+            work_dir=work_dir,
             language=output_language,
-            field_names=field_names,
-            field_specs=field_specs,
+            max_chars=max_chars,
+            max_chunks=max_chunks,
+            field_specs=tuple(field_specs),
+            llm_config=llm_config,
+            retries=retries,
+            preset=active_preset_name,
+            force=force,
+            fail_fast=fail_fast,
+            project_id=project_id,
         )
-        evidence_path = out.with_suffix(".evidence.md")
-        export_evidence(
-            extracts,
-            evidence_path,
-            chunks_by_paper=chunks_by_paper,
-            language=output_language,
-            field_names=field_names,
-            field_specs=field_specs,
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    def progress(event: ProgressEvent) -> None:
+        _echo_progress(output_language, event)
+
+    try:
+        result = run_pipeline(
+            pipeline_config,
+            paper_plan,
+            get_llm_client,
+            retry_state=retry_state,
+            run_report_path=run_report_path,
+            progress_callback=progress,
+            read_pdf_pages_fn=read_pdf_pages,
+            extract_paper_fn=extract_paper,
         )
-    except Exception as exc:
-        run_state["export_error"] = {"type": exc.__class__.__name__, "message": str(exc)[:2000]}
-        save_run_report(run_state, run_report_path)
-        raise
-    exported_ids = {extract.paper_id for extract in extracts}
-    for paper_id in exported_ids:
-        item = report_items[paper_id]
-        if item.get("status") not in {"pdf_failed", "llm_failed", "skipped"}:
-            item["status"] = "exported"
-            _append_stage(item, "exported")
-    save_run_report(run_state, run_report_path)
-    typer.echo(_message(output_language, "wrote", path=markdown_path))
-    typer.echo(_message(output_language, "wrote", path=csv_path))
-    typer.echo(_message(output_language, "wrote", path=evidence_path))
-    typer.echo(_message(output_language, "wrote", path=run_report_path))
-    typer.echo(_message(output_language, "run_summary", **run_state["summary"]))
+    except PipelineError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+
+    if result.markdown_path:
+        typer.echo(_message(output_language, "wrote", path=result.markdown_path))
+    if result.csv_path:
+        typer.echo(_message(output_language, "wrote", path=result.csv_path))
+    if result.evidence_path:
+        typer.echo(_message(output_language, "wrote", path=result.evidence_path))
+    typer.echo(_message(output_language, "wrote", path=result.run_report_path))
+    typer.echo(_message(output_language, "run_summary", **result.run_report["summary"]))
+    if not result.success:
+        raise typer.Exit(1)
 
 
 def _paper_ids_for_paths(pdf_paths: list[Path]) -> list[str]:
@@ -466,30 +331,15 @@ def _paper_ids_for_paths(pdf_paths: list[Path]) -> list[str]:
     return paper_ids
 
 
-def _append_stage(item: dict, stage: str) -> None:
-    stages = item.setdefault("stages", [])
-    if stage not in stages:
-        stages.append(stage)
-
-
-def _record_paper_failure(item: dict, status: str, exc: Exception, language: str) -> None:
-    record_failure(item, status, exc)
-    typer.echo(
-        _message(
-            language,
-            "paper_failed",
-            filename=Path(item.get("pdf_path", item.get("paper_id", "paper"))).name,
-            error=str(exc),
-        ),
-        err=True,
-    )
-
-
-def _mark_remaining_skipped(paper_plan: list[tuple[Path, str]], report_items: dict[str, dict]) -> None:
-    for _, paper_id in paper_plan:
-        item = report_items[paper_id]
-        if item.get("status") not in {"exported", "cache_hit", "extracted", "pdf_failed", "llm_failed"}:
-            item["status"] = "skipped"
+def _echo_progress(language: str, event: ProgressEvent) -> None:
+    if event.status == "cache_hit" and event.filename:
+        typer.echo(_message(language, "using_cache", filename=event.filename))
+    elif event.phase == "cache" and event.status == "stale" and event.filename:
+        typer.echo(_message(language, "cache_stale", filename=event.filename))
+    elif event.phase == "pdf" and event.status == "started" and event.filename:
+        typer.echo(_message(language, "processing", filename=event.filename))
+    elif event.phase == "paper" and event.status == "failed" and event.filename:
+        typer.echo(_message(language, "paper_failed", filename=event.filename, error=event.message), err=True)
 
 
 def _is_provider_error(exc: Exception) -> bool:

@@ -8,7 +8,7 @@ from .retry import error_status_code, is_transient_error
 
 
 RUN_REPORT_VERSION = 1
-FAILED_STATUSES = {"pdf_failed", "llm_failed", "skipped"}
+FAILED_STATUSES = {"pdf_failed", "llm_failed", "skipped", "cancelled"}
 
 
 def create_run_report(config: dict, paper_plan: list[tuple[Path, str]]) -> dict:
@@ -71,6 +71,7 @@ def update_run_summary(report: dict) -> None:
         "llm_failed": sum(item.get("status") == "llm_failed" for item in items),
         "exported": sum("exported" in item.get("stages", []) for item in items),
         "skipped": sum(item.get("status") == "skipped" for item in items),
+        "cancelled": sum(item.get("status") == "cancelled" for item in items),
     }
 
 
