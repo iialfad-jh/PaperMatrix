@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import hashlib
 import json
-from collections import Counter
 from pathlib import Path
 
 import typer
@@ -16,6 +14,7 @@ from .pipeline import (
     PipelineConfig,
     PipelineError,
     ProgressEvent,
+    paper_ids_for_paths,
     resolve_project_dir,
     run_pipeline,
 )
@@ -116,11 +115,26 @@ def main(
     ),
     debug_config: bool = typer.Option(False, "--debug-config", help="Print model/API configuration without revealing the API key."),
     provider_probe: bool = typer.Option(False, "--provider-probe", help="Send one tiny provider test request and exit."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Web UI host (used only with SOURCE=web)."),
+    port: int = typer.Option(8765, "--port", min=1, max=65535, help="Web UI port (used only with SOURCE=web)."),
+    no_open: bool = typer.Option(False, "--no-open", help="Do not open a browser when starting the Web UI."),
 ) -> None:
     try:
         output_language = normalize_language(language)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+    if source == "web":
+        if sources_file is not None or retry_failed is not None:
+            raise typer.BadParameter("web mode cannot be combined with --sources-file or --retry-failed")
+        try:
+            from .web import serve
+
+            serve(host=host, port=port, open_browser=not no_open, base_dir=Path.cwd())
+        except RuntimeError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1) from exc
+        return
 
     if list_presets_flag:
         for available_preset in list_presets():
@@ -257,7 +271,7 @@ def main(
             source_description = sources_file if sources_file is not None else source
             typer.echo(_message(output_language, "no_pdfs", source=source_description), err=True)
             raise typer.Exit(1)
-        paper_ids = _paper_ids_for_paths(pdf_paths)
+        paper_ids = paper_ids_for_paths(pdf_paths)
         paper_plan = list(zip(pdf_paths, paper_ids, strict=True))
         run_report_path = work_dir / "run-report.json"
 
@@ -313,22 +327,8 @@ def main(
 
 
 def _paper_ids_for_paths(pdf_paths: list[Path]) -> list[str]:
-    stem_counts = Counter(path.stem for path in pdf_paths)
-    paper_ids = []
-    used_ids = set()
-    for path in pdf_paths:
-        paper_id = path.stem
-        if stem_counts[path.stem] > 1:
-            digest = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:8]
-            paper_id = f"{path.stem}-{digest}"
-        candidate = paper_id
-        suffix = 2
-        while candidate in used_ids:
-            candidate = f"{paper_id}-{suffix}"
-            suffix += 1
-        used_ids.add(candidate)
-        paper_ids.append(candidate)
-    return paper_ids
+    """Backward-compatible alias for callers of the former CLI helper."""
+    return paper_ids_for_paths(pdf_paths)
 
 
 def _echo_progress(language: str, event: ProgressEvent) -> None:

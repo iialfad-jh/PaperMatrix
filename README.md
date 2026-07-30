@@ -19,6 +19,12 @@ python -m venv .venv
 pip install -e .
 ```
 
+如需使用本地 Web UI，请安装 Web 可选依赖：
+
+```bash
+pip install -e ".[web]"
+```
+
 ## API Key
 
 运行前设置 `OPENAI_API_KEY`：
@@ -49,6 +55,24 @@ papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai
 ```
 
 ## 使用
+
+### 本地 Web UI
+
+启动浏览器工作台：
+
+```powershell
+papermatrix web
+```
+
+服务默认只监听 `http://127.0.0.1:8765`。页面支持上传多个 PDF，或逐行输入本地路径、arXiv、DOI 和 PDF URL；可以选择输出语言与字段预设，实时查看结构化进度，取消任务、重试失败项，并预览或下载 Markdown、CSV、证据文件和运行报告。API Key 仍从 `OPENAI_API_KEY` 环境变量读取，不会写入页面或任务报告。
+
+如果不希望自动打开系统浏览器，或需要修改端口：
+
+```powershell
+papermatrix web --no-open --port 9000
+```
+
+### 命令行
 
 默认输出中文矩阵：
 
@@ -249,7 +273,7 @@ python -m pytest -m integration
 
 ## 当前限制
 
-- 没有 Web UI。
+- Web UI 目前是本地单用户模式，服务重启后不会恢复页面中的会话列表；项目文件和运行报告仍保留在 `.papermatrix/projects/`。
 - 不支持 Zotero 或对话问答。
 - 扫描件或纯图片表格仍需要 OCR，目前无法识别。
 - 抽取只使用每篇论文中被选中的片段。

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -134,6 +136,26 @@ def resolve_project_dir(base_dir: str | Path, project_id: str | None = None) -> 
     if not PROJECT_ID_PATTERN.fullmatch(project_id):
         raise ValueError("project_id must use 1-64 letters, numbers, hyphens, or underscores")
     return root / "projects" / project_id
+
+
+def paper_ids_for_paths(pdf_paths: list[Path]) -> list[str]:
+    """Build deterministic, collision-safe paper ids for a set of PDF paths."""
+    stem_counts = Counter(path.stem for path in pdf_paths)
+    paper_ids: list[str] = []
+    used_ids: set[str] = set()
+    for path in pdf_paths:
+        paper_id = path.stem
+        if stem_counts[path.stem] > 1:
+            digest = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:8]
+            paper_id = f"{path.stem}-{digest}"
+        candidate = paper_id
+        suffix = 2
+        while candidate in used_ids:
+            candidate = f"{paper_id}-{suffix}"
+            suffix += 1
+        used_ids.add(candidate)
+        paper_ids.append(candidate)
+    return paper_ids
 
 
 def run_pipeline(

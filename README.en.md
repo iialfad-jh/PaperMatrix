@@ -19,6 +19,12 @@ Activate it and install the project:
 pip install -e .
 ```
 
+Install the optional Web dependencies to use the local Web UI:
+
+```bash
+pip install -e ".[web]"
+```
+
 ## API Key
 
 Set `OPENAI_API_KEY` before running:
@@ -49,6 +55,24 @@ papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai
 ```
 
 ## Usage
+
+### Local Web UI
+
+Start the browser workspace:
+
+```powershell
+papermatrix web
+```
+
+The service listens only on `http://127.0.0.1:8765` by default. The page accepts multiple PDF uploads or one local path, arXiv reference, DOI, or PDF URL per line. It provides language and field-preset controls, structured live progress, cancellation, failed-item retry, preview, and downloads for Markdown, CSV, evidence, and the run report. The API key is still read from `OPENAI_API_KEY`; it is never added to the page or job report.
+
+To avoid opening the system browser or to use a different port:
+
+```powershell
+papermatrix web --no-open --port 9000
+```
+
+### Command line
 
 The default output language is Chinese:
 
@@ -249,7 +273,7 @@ In Chinese mode, the LLM is instructed to summarize extracted field values in Si
 
 ## Current Limits
 
-- No Web UI.
+- The Web UI is currently local and single-user. Its session list is not restored after a server restart, although project files and run reports remain under `.papermatrix/projects/`.
 - No Zotero or chat QA.
 - Scanned or image-only tables require OCR and are not recognized yet.
 - Extraction only uses selected chunks from each paper.

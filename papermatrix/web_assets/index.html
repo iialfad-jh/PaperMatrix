@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="PaperMatrix 本地论文对比矩阵工作台">
+  <title>PaperMatrix · 论文矩阵工作台</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="PaperMatrix 首页">
+        <span class="brand-mark">PM</span>
+        <span><strong>PaperMatrix</strong><small>论文证据工作台</small></span>
+      </a>
+      <div class="health" data-testid="health"><span></span> 本地服务</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">LOCAL-FIRST · EVIDENCE-LED</p>
+          <h1>把散落的论文，<br><em>整理成可核查的矩阵。</em></h1>
+        </div>
+        <p class="hero-copy">上传 PDF，或粘贴 arXiv、DOI 与 PDF 链接。PaperMatrix 会保留页码与原文证据，让每一格结论都有出处。</p>
+      </section>
+
+      <div class="workspace">
+        <section class="panel composer" aria-labelledby="new-job-title">
+          <div class="panel-heading">
+            <div><span class="step">01</span><h2 id="new-job-title">新建矩阵</h2></div>
+            <p>内容只在本机处理</p>
+          </div>
+
+          <form id="job-form" data-testid="job-form">
+            <label for="project-id">项目 ID</label>
+            <input id="project-id" name="project_id" type="text" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" placeholder="留空将自动生成">
+            <p class="hint">相同 ID 会复用已有下载与抽取缓存。</p>
+
+            <label for="source">论文来源</label>
+            <textarea id="source" name="source" rows="5" placeholder="每行一个来源，例如：&#10;arxiv:2401.12345&#10;doi:10.1038/s41586-024-00000-0&#10;https://example.org/paper.pdf"></textarea>
+
+            <label class="file-drop" for="files" data-testid="file-drop">
+              <input id="files" name="files" type="file" accept="application/pdf,.pdf" multiple>
+              <span class="file-icon">↥</span>
+              <span><strong>选择本地 PDF</strong><small id="file-note">支持多选，单个文件不超过 200 MB</small></span>
+            </label>
+
+            <div class="field-grid">
+              <div>
+                <label for="language">输出语言</label>
+                <select id="language" name="language">
+                  <option value="zh">简体中文</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+              <div>
+                <label for="preset">字段预设</label>
+                <select id="preset" name="preset" data-testid="preset"></select>
+              </div>
+            </div>
+
+            <div id="custom-fields-wrap" class="hidden">
+              <label for="fields">自定义字段</label>
+              <input id="fields" name="fields" type="text" placeholder="problem,method,dataset,result">
+            </div>
+
+            <details>
+              <summary>模型与高级设置</summary>
+              <div class="details-body">
+                <div class="field-grid">
+                  <div>
+                    <label for="model">模型</label>
+                    <input id="model" name="model" type="text" placeholder="使用环境变量默认值">
+                  </div>
+                  <div>
+                    <label for="api-mode">API 模式</label>
+                    <select id="api-mode" name="api_mode">
+                      <option value="chat">Chat Completions</option>
+                      <option value="responses">Responses</option>
+                    </select>
+                  </div>
+                </div>
+                <label for="base-url">兼容 API 地址</label>
+                <input id="base-url" name="base_url" type="url" placeholder="留空使用 OpenAI 默认地址">
+                <div class="field-grid three">
+                  <div><label for="max-chars">块字符数</label><input id="max-chars" name="max_chars" type="number" min="1" max="100000" value="3500"></div>
+                  <div><label for="max-chunks">最多选块</label><input id="max-chunks" name="max_chunks" type="number" min="1" max="100" value="12"></div>
+                  <div><label for="retries">重试次数</label><input id="retries" name="retries" type="number" min="0" max="10" value="2"></div>
+                </div>
+                <label class="check"><input type="checkbox" name="force" value="true"><span>忽略缓存，重新抽取</span></label>
+                <label class="check"><input type="checkbox" name="fail_fast" value="true"><span>首个失败后停止</span></label>
+              </div>
+            </details>
+
+            <div id="form-error" class="notice error hidden" role="alert"></div>
+            <button class="primary" type="submit" data-testid="submit-job"><span>开始生成矩阵</span><b>→</b></button>
+          </form>
+        </section>
+
+        <section class="panel monitor" aria-labelledby="monitor-title">
+          <div class="panel-heading">
+            <div><span class="step">02</span><h2 id="monitor-title">处理进度</h2></div>
+            <span id="job-status" class="status idle">待开始</span>
+          </div>
+
+          <div id="empty-state" class="empty-state">
+            <div class="matrix-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <h3>矩阵会在这里生长</h3>
+            <p>提交论文后，可实时查看导入、PDF 解析、LLM 抽取与导出状态。</p>
+          </div>
+
+          <div id="job-view" class="job-view hidden">
+            <div class="job-meta"><span>项目</span><strong id="active-project">—</strong><code id="active-job">—</code></div>
+            <div class="progress-track"><div id="progress-bar"></div></div>
+            <div id="progress-label" class="progress-label"><span>准备中</span><b>0%</b></div>
+            <div id="job-error" class="notice error hidden" role="alert"></div>
+            <div id="event-list" class="event-list" aria-live="polite"></div>
+            <div class="job-actions">
+              <button id="cancel-job" class="secondary danger hidden" type="button" data-testid="cancel-job">取消任务</button>
+              <button id="retry-job" class="secondary hidden" type="button" data-testid="retry-job">重试失败项</button>
+            </div>
+
+            <section id="results" class="results hidden" aria-labelledby="result-title">
+              <div class="result-heading"><div><span class="step">03</span><h2 id="result-title">结果预览</h2></div><div id="downloads" class="downloads"></div></div>
+              <div id="matrix-preview" class="matrix-preview"></div>
+              <details class="evidence"><summary>查看证据摘录</summary><pre id="evidence-preview"></pre></details>
+            </section>
+          </div>
+        </section>
+      </div>
+
+      <section class="recent" aria-labelledby="recent-title">
+        <div class="recent-heading"><div><span class="step">↺</span><h2 id="recent-title">本次会话</h2></div><p>点击任务可重新查看状态与结果</p></div>
+        <div id="recent-jobs" class="recent-jobs"><p class="muted">还没有任务。</p></div>
+      </section>
+    </main>
+
+    <footer><span>PaperMatrix 0.1</span><span>Evidence before summary.</span></footer>
+  </div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
