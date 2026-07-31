@@ -106,6 +106,82 @@ def test_web_accepts_a_text_source_without_a_selected_upload(tmp_path: Path):
     assert final["summary"]["exported"] == 1
 
 
+def test_web_passes_selected_reasoning_effort_to_the_pipeline(tmp_path: Path):
+    captured = {}
+
+    def runner(config, paper_plan, _llm_factory, **kwargs):
+        captured.update(config.llm_config)
+        return write_success_result(config, paper_plan, Path(kwargs["run_report_path"]), kwargs["progress_callback"])
+
+    manager = JobManager(tmp_path, pipeline_runner=runner)
+    with TestClient(create_app(tmp_path, manager=manager)) as client:
+        config_response = client.get("/api/config")
+        assert config_response.json()["defaults"]["model"] == "gpt-5.5"
+        assert config_response.json()["defaults"]["reasoning_effort"] == "auto"
+
+        response = client.post(
+            "/api/jobs",
+            data={
+                "project_id": "reasoning-test",
+                "preset": "general",
+                "model": "gpt-5.5",
+                "api_mode": "responses",
+                "reasoning_effort": "medium",
+            },
+            files={"files": ("paper.pdf", b"%PDF-1.4\n", "application/pdf")},
+        )
+        assert response.status_code == 202, response.text
+        wait_for_status(client, response.json()["id"], {"completed"})
+
+    assert captured["reasoning_effort"] == "medium"
+
+
+def test_web_rejects_invalid_reasoning_effort(tmp_path: Path):
+    with TestClient(create_app(tmp_path)) as client:
+        response = client.post(
+            "/api/jobs",
+            data={"project_id": "bad-reasoning", "preset": "general", "reasoning_effort": "extreme"},
+            files={"files": ("paper.pdf", b"%PDF-1.4\n", "application/pdf")},
+        )
+
+    assert response.status_code == 422
+    assert "reasoning_effort" in response.json()["detail"]
+
+
+def test_web_passes_api_key_in_memory_without_persisting_it(tmp_path: Path, monkeypatch):
+    captured = {}
+    secret = "sk-local-secret"
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr("papermatrix.web.OpenAILLMClient", FakeOpenAILLMClient)
+
+    def runner(config, paper_plan, llm_factory, **kwargs):
+        llm_factory()
+        assert "api_key" not in config.llm_config
+        return write_success_result(config, paper_plan, Path(kwargs["run_report_path"]), kwargs["progress_callback"])
+
+    manager = JobManager(tmp_path, pipeline_runner=runner)
+    with TestClient(create_app(tmp_path, manager=manager)) as client:
+        response = client.post(
+            "/api/jobs",
+            data={"project_id": "api-key-test", "preset": "general", "api_key": secret},
+            files={"files": ("paper.pdf", b"%PDF-1.4\n", "application/pdf")},
+        )
+        assert response.status_code == 202, response.text
+        job_id = response.json()["id"]
+        wait_for_status(client, job_id, {"completed"})
+
+    job = manager.get(job_id)
+    assert captured["api_key"] == secret
+    assert secret not in response.text
+    assert secret not in repr(job.spec)
+    assert job.run_report_path is not None
+    assert secret not in job.run_report_path.read_text(encoding="utf-8")
+
+
 def test_web_reuses_the_same_content_addressed_upload(tmp_path: Path):
     def runner(config, paper_plan, _llm_factory, **kwargs):
         return write_success_result(config, paper_plan, Path(kwargs["run_report_path"]), kwargs["progress_callback"])

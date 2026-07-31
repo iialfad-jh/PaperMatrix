@@ -16,5 +16,6 @@ def test_pre_table_cache_version_is_invalidated(tmp_path: Path):
     )
     old = {**current, "cache_version": 2}
 
-    assert current["cache_version"] == 3
+    assert current["cache_version"] == 4
+    assert current["llm"]["reasoning_effort"] == "auto"
     assert not is_cache_metadata_current(old, current)

@@ -1,7 +1,7 @@
 import sys
 import types
 
-from papermatrix.llm import OpenAILLMClient
+from papermatrix.llm import OpenAILLMClient, resolve_openai_config
 from papermatrix.schema import FieldSpec
 
 
@@ -85,6 +85,73 @@ def test_openai_client_uses_responses_api_when_selected(monkeypatch):
     assert "instructions" not in fake_client.responses.calls[0]
     assert "temperature" not in fake_client.responses.calls[0]
     assert fake_client.chat.completions.calls == []
+
+
+def test_responses_api_sends_selected_reasoning_effort(monkeypatch):
+    install_fake_openai(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "relay-key")
+
+    client = OpenAILLMClient(model="gpt-5.5", api_mode="responses", reasoning_effort="medium")
+    client.extract_json("paper", [])
+
+    request = FakeOpenAI.instances[0].responses.calls[0]
+    assert request["reasoning"] == {"effort": "medium"}
+
+
+def test_chat_api_sends_selected_reasoning_effort_without_temperature(monkeypatch):
+    install_fake_openai(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "relay-key")
+
+    client = OpenAILLMClient(model="gpt-5.5", api_mode="chat", reasoning_effort="high")
+    client.extract_json("paper", [])
+
+    request = FakeOpenAI.instances[0].chat.completions.calls[0]
+    assert request["reasoning_effort"] == "high"
+    assert "temperature" not in request
+
+
+def test_auto_reasoning_effort_omits_provider_parameter(monkeypatch):
+    install_fake_openai(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "relay-key")
+
+    client = OpenAILLMClient(model="gpt-test", api_mode="responses", reasoning_effort="auto")
+    client.extract_json("paper", [])
+
+    assert "reasoning" not in FakeOpenAI.instances[0].responses.calls[0]
+
+
+def test_chat_auto_reasoning_model_omits_reasoning_and_temperature(monkeypatch):
+    install_fake_openai(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "relay-key")
+
+    client = OpenAILLMClient(model="gpt-5.5", api_mode="chat", reasoning_effort="auto")
+    client.extract_json("paper", [])
+
+    request = FakeOpenAI.instances[0].chat.completions.calls[0]
+    assert "reasoning_effort" not in request
+    assert "temperature" not in request
+
+
+def test_reasoning_effort_can_be_read_from_environment(monkeypatch):
+    monkeypatch.setenv("PAPERMATRIX_REASONING_EFFORT", "low")
+
+    assert resolve_openai_config()["reasoning_effort"] == "low"
+
+
+def test_default_model_is_gpt_5_5(monkeypatch):
+    monkeypatch.delenv("PAPERMATRIX_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+
+    assert resolve_openai_config()["model"] == "gpt-5.5"
+
+
+def test_invalid_reasoning_effort_is_rejected():
+    try:
+        resolve_openai_config(reasoning_effort="extreme")
+    except ValueError as exc:
+        assert "reasoning_effort" in str(exc)
+    else:
+        raise AssertionError("invalid reasoning effort should be rejected")
 
 
 def test_openai_client_reads_model_from_environment(monkeypatch):

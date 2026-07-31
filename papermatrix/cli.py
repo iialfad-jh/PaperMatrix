@@ -92,9 +92,14 @@ def main(
     out: Path = typer.Option(Path("matrix.md"), "--out", "-o", help="Markdown matrix output path."),
     max_chars: int = typer.Option(3500, help="Maximum characters per chunk."),
     max_chunks: int = typer.Option(12, help="Maximum chunks sent to the LLM per paper."),
-    model: str | None = typer.Option(None, help="OpenAI model name. Defaults to PAPERMATRIX_MODEL, OPENAI_MODEL, then gpt-4.1-mini."),
+    model: str | None = typer.Option(None, help="OpenAI model name. Defaults to PAPERMATRIX_MODEL, OPENAI_MODEL, then gpt-5.5."),
     base_url: str | None = typer.Option(None, "--base-url", help="OpenAI-compatible API base URL."),
     api_mode: str | None = typer.Option(None, "--api-mode", help='API mode: "chat" or "responses".'),
+    reasoning_effort: str | None = typer.Option(
+        None,
+        "--reasoning-effort",
+        help='Reasoning effort: "auto", "low", "medium", or "high".',
+    ),
     language: str = typer.Option("zh", "--language", "-l", help='Output language: "zh" or "en".'),
     fields: str | None = typer.Option(None, "--fields", help="Comma-separated fields or a JSON fields file."),
     preset: str | None = typer.Option(None, "--preset", help="Use a built-in extraction field preset."),
@@ -186,7 +191,13 @@ def main(
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--preset" if preset else "--fields") from exc
         try:
-            llm_config = resolve_openai_config(model=model, base_url=base_url, api_mode=api_mode, language=output_language)
+            llm_config = resolve_openai_config(
+                model=model,
+                base_url=base_url,
+                api_mode=api_mode,
+                reasoning_effort=reasoning_effort,
+                language=output_language,
+            )
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
 
@@ -199,6 +210,7 @@ def main(
                 model=llm_config["model"],
                 base_url=llm_config["base_url"] or None,
                 api_mode=llm_config["api_mode"],
+                reasoning_effort=llm_config.get("reasoning_effort", "auto"),
                 language=output_language,
                 max_retries=retries,
             )

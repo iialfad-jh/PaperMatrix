@@ -56,8 +56,10 @@ class JobSpec:
     preset: str | None = "general"
     fields: str | None = None
     model: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     base_url: str | None = None
     api_mode: str | None = None
+    reasoning_effort: str | None = None
     max_chars: int = 3500
     max_chunks: int = 12
     retries: int = 2
@@ -216,6 +218,7 @@ class JobManager:
         retry_spec = JobSpec(
             project_id=previous.spec.project_id,
             language=previous.spec.language,
+            api_key=previous.spec.api_key,
             retries=previous.spec.retries,
             retry_report=previous.run_report_path,
         )
@@ -322,6 +325,7 @@ class JobManager:
                 model=spec.model,
                 base_url=spec.base_url,
                 api_mode=spec.api_mode,
+                reasoning_effort=spec.reasoning_effort,
                 language=language,
             )
             project_id = spec.project_id
@@ -379,8 +383,10 @@ class JobManager:
             if llm_client is None:
                 llm_client = OpenAILLMClient(
                     model=llm_config["model"],
+                    api_key=spec.api_key,
                     base_url=llm_config["base_url"] or None,
                     api_mode=llm_config["api_mode"],
+                    reasoning_effort=llm_config.get("reasoning_effort", "auto"),
                     language=language,
                     max_retries=retries,
                 )
@@ -447,6 +453,7 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
                 "preset": "general",
                 "model": resolve_openai_config()["model"],
                 "api_mode": resolve_openai_config()["api_mode"],
+                "reasoning_effort": resolve_openai_config()["reasoning_effort"],
                 "max_chars": 3500,
                 "max_chunks": 12,
                 "retries": 2,
@@ -465,8 +472,10 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
         preset: str = Form("general"),
         fields: str = Form(""),
         model: str = Form(""),
+        api_key: str = Form(""),
         base_url: str = Form(""),
         api_mode: str = Form(""),
+        reasoning_effort: str = Form("auto"),
         max_chars: int = Form(3500),
         max_chunks: int = Form(12),
         retries: int = Form(2),
@@ -499,6 +508,7 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
                 model=model.strip() or None,
                 base_url=base_url.strip() or None,
                 api_mode=api_mode.strip() or None,
+                reasoning_effort=reasoning_effort.strip() or None,
                 language=language,
             )
         except (ValueError, JobConflictError) as exc:
@@ -550,8 +560,10 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
             preset=preset.strip() or None,
             fields=fields.strip() or None,
             model=model.strip() or None,
+            api_key=api_key.strip() or None,
             base_url=base_url.strip() or None,
             api_mode=api_mode.strip() or None,
+            reasoning_effort=reasoning_effort.strip() or None,
             max_chars=max_chars,
             max_chunks=max_chunks,
             retries=retries,

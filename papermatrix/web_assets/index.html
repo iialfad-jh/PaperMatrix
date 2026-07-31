@@ -69,7 +69,7 @@
             <details>
               <summary>模型与高级设置</summary>
               <div class="details-body">
-                <div class="field-grid">
+                <div class="field-grid three">
                   <div>
                     <label for="model">模型</label>
                     <input id="model" name="model" type="text" placeholder="使用环境变量默认值">
@@ -81,9 +81,28 @@
                       <option value="responses">Responses</option>
                     </select>
                   </div>
+                  <div>
+                    <label for="reasoning-effort">推理强度</label>
+                    <select id="reasoning-effort" name="reasoning_effort" data-testid="reasoning-effort">
+                      <option value="auto">自动（模型默认）</option>
+                      <option value="low">低（更快）</option>
+                      <option value="medium">中（均衡）</option>
+                      <option value="high">高（更深入）</option>
+                    </select>
+                    <p id="reasoning-hint" class="hint">仅适用于支持推理强度的模型。</p>
+                  </div>
                 </div>
-                <label for="base-url">兼容 API 地址</label>
-                <input id="base-url" name="base_url" type="url" placeholder="留空使用 OpenAI 默认地址">
+                <div class="field-grid">
+                  <div>
+                    <label for="api-key">API Key</label>
+                    <input id="api-key" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="留空使用 OPENAI_API_KEY">
+                    <p class="hint">仅保存在当前任务内存中，不写入结果或缓存。</p>
+                  </div>
+                  <div>
+                    <label for="base-url">兼容 API 地址</label>
+                    <input id="base-url" name="base_url" type="url" placeholder="留空使用 OpenAI 默认地址">
+                  </div>
+                </div>
                 <div class="field-grid three">
                   <div><label for="max-chars">块字符数</label><input id="max-chars" name="max_chars" type="number" min="1" max="100000" value="3500"></div>
                   <div><label for="max-chunks">最多选块</label><input id="max-chunks" name="max_chunks" type="number" min="1" max="100" value="12"></div>

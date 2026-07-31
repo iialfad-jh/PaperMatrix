@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 
 
 def build_cache_metadata(
@@ -33,6 +33,7 @@ def build_cache_metadata(
         "llm": {
             "model": llm_config["model"],
             "api_mode": llm_config["api_mode"],
+            "reasoning_effort": llm_config.get("reasoning_effort", "auto"),
             "base_url": llm_config["base_url"],
         },
         "chunking": {

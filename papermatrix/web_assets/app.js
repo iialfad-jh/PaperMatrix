@@ -32,6 +32,8 @@ async function loadConfig() {
   $("#language").value = config.defaults.language;
   $("#model").placeholder = config.defaults.model;
   $("#api-mode").value = config.defaults.api_mode;
+  $("#reasoning-effort").value = config.defaults.reasoning_effort;
+  updateReasoningAvailability();
 }
 
 function updateFileNote() {
@@ -43,6 +45,17 @@ function toggleCustomFields() {
   const custom = $("#preset").value === "";
   $("#custom-fields-wrap").classList.toggle("hidden", !custom);
   $("#fields").required = custom;
+}
+
+function updateReasoningAvailability() {
+  const model = ($("#model").value.trim() || $("#model").placeholder.trim()).toLowerCase();
+  const select = $("#reasoning-effort");
+  const knownNonReasoningModel = /^(gpt-3\.5|gpt-4)(?:[.-]|$)/.test(model);
+  select.disabled = knownNonReasoningModel;
+  if (knownNonReasoningModel) select.value = "auto";
+  $("#reasoning-hint").textContent = knownNonReasoningModel
+    ? "当前模型不支持推理强度，将使用自动模式。"
+    : "档位越高通常越慢；论文结构化抽取建议使用低或中。";
 }
 
 function eventDescription(progress) {
@@ -165,6 +178,7 @@ async function submitJob(event) {
   try {
     const formData = new FormData(event.currentTarget);
     const job = await api("/api/jobs", { method: "POST", body: formData });
+    $("#api-key").value = "";
     updateJob(job);
     loadJobs();
     connectEvents(job.id);
@@ -229,6 +243,7 @@ async function bootstrap() {
 $("#job-form").addEventListener("submit", submitJob);
 $("#files").addEventListener("change", updateFileNote);
 $("#preset").addEventListener("change", toggleCustomFields);
+$("#model").addEventListener("input", updateReasoningAvailability);
 $("#cancel-job").addEventListener("click", cancelCurrent);
 $("#retry-job").addEventListener("click", retryCurrent);
 $("#recent-jobs").addEventListener("click", (event) => {

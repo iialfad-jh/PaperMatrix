@@ -28,7 +28,9 @@ LANGUAGE_OUTPUT_INSTRUCTIONS = {
     "en": "Write extracted field values in English. Keep names of datasets, metrics, and methods as written when they are proper nouns.",
     "zh": "除数据集、指标、模型名等专有名词可保留原文外，字段值请用简体中文概括。缺失字段必须仍然返回字符串 \"unknown\"。",
 }
-DEFAULT_MODEL = "gpt-4.1-mini"
+DEFAULT_MODEL = "gpt-5.5"
+DEFAULT_REASONING_EFFORT = "auto"
+REASONING_EFFORTS = ("auto", "low", "medium", "high")
 
 
 def normalize_language(language: str) -> str:
@@ -38,10 +40,24 @@ def normalize_language(language: str) -> str:
     return normalized
 
 
+def normalize_reasoning_effort(reasoning_effort: str | None) -> str:
+    normalized = (reasoning_effort or DEFAULT_REASONING_EFFORT).strip().lower()
+    if normalized not in REASONING_EFFORTS:
+        allowed = ", ".join(f'"{value}"' for value in REASONING_EFFORTS)
+        raise ValueError(f"reasoning_effort must be one of {allowed}")
+    return normalized
+
+
+def is_reasoning_model(model: str) -> bool:
+    normalized = model.strip().lower()
+    return normalized.startswith("gpt-5") or normalized.startswith(("o1", "o3", "o4"))
+
+
 def resolve_openai_config(
     model: str | None = None,
     base_url: str | None = None,
     api_mode: str | None = None,
+    reasoning_effort: str | None = None,
     language: str = "zh",
 ) -> dict[str, str]:
     resolved_api_mode = (api_mode or os.getenv("OPENAI_API_MODE") or "chat").lower()
@@ -50,6 +66,9 @@ def resolve_openai_config(
     return {
         "model": model or os.getenv("PAPERMATRIX_MODEL") or os.getenv("OPENAI_MODEL") or DEFAULT_MODEL,
         "api_mode": resolved_api_mode,
+        "reasoning_effort": normalize_reasoning_effort(
+            reasoning_effort or os.getenv("PAPERMATRIX_REASONING_EFFORT")
+        ),
         "base_url": base_url or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE") or "",
         "language": normalize_language(language),
     }
@@ -73,14 +92,22 @@ class OpenAILLMClient:
         api_key: str | None = None,
         base_url: str | None = None,
         api_mode: str | None = None,
+        reasoning_effort: str | None = None,
         language: str = "zh",
         max_retries: int = 2,
     ) -> None:
         from openai import OpenAI
 
-        config = resolve_openai_config(model=model, base_url=base_url, api_mode=api_mode, language=language)
+        config = resolve_openai_config(
+            model=model,
+            base_url=base_url,
+            api_mode=api_mode,
+            reasoning_effort=reasoning_effort,
+            language=language,
+        )
         self.model = config["model"]
         self.api_mode = config["api_mode"]
+        self.reasoning_effort = config["reasoning_effort"]
         self.language = config["language"]
 
         client_kwargs = {
@@ -104,6 +131,7 @@ class OpenAILLMClient:
         return {
             "model": self.model,
             "api_mode": self.api_mode,
+            "reasoning_effort": self.reasoning_effort,
             "base_url": self.base_url or "OpenAI default",
             "language": self.language,
         }
@@ -157,25 +185,32 @@ class OpenAILLMClient:
         )
 
     def _extract_with_chat_completions(self, user_content: str, field_specs: list[FieldSpec]) -> str | None:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            store=False,
-            response_format={"type": "json_object"},
-            messages=[
+        request = {
+            "model": self.model,
+            "store": False,
+            "response_format": {"type": "json_object"},
+            "messages": [
                 {"role": "system", "content": self._build_system_prompt(field_specs)},
                 {"role": "user", "content": user_content},
             ],
-        )
+        }
+        if self.reasoning_effort == DEFAULT_REASONING_EFFORT and not is_reasoning_model(self.model):
+            request["temperature"] = 0
+        elif self.reasoning_effort != DEFAULT_REASONING_EFFORT:
+            request["reasoning_effort"] = self.reasoning_effort
+        response = self.client.chat.completions.create(**request)
         return response.choices[0].message.content
 
     def _extract_with_responses(self, user_content: str, field_specs: list[FieldSpec]) -> str | None:
-        response = self.client.responses.create(
-            model=self.model,
-            store=False,
-            max_output_tokens=1200,
-            input=f"{self._build_system_prompt(field_specs)}\n\n{user_content}",
-        )
+        request = {
+            "model": self.model,
+            "store": False,
+            "max_output_tokens": 1200,
+            "input": f"{self._build_system_prompt(field_specs)}\n\n{user_content}",
+        }
+        if self.reasoning_effort != DEFAULT_REASONING_EFFORT:
+            request["reasoning"] = {"effort": self.reasoning_effort}
+        response = self.client.responses.create(**request)
         content = getattr(response, "output_text", None)
         if content:
             return content

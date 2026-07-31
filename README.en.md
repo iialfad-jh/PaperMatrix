@@ -46,13 +46,16 @@ $env:OPENAI_API_KEY="your_relay_api_key_here"
 $env:OPENAI_BASE_URL="https://api.dwai.cloud/v1"
 $env:OPENAI_API_MODE="responses"
 $env:PAPERMATRIX_MODEL="gpt-5.5"
+$env:PAPERMATRIX_REASONING_EFFORT="medium"
 ```
 
 You can also pass them per run:
 
 ```powershell
-papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai.cloud/v1 --api-mode responses
+papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai.cloud/v1 --api-mode responses --reasoning-effort medium
 ```
+
+Reasoning effort accepts `auto`, `low`, `medium`, or `high`. `auto` leaves the setting to the model or provider; start with `low` or `medium` for structured paper extraction.
 
 ## Usage
 
@@ -64,7 +67,7 @@ Start the browser workspace:
 papermatrix web
 ```
 
-The service listens only on `http://127.0.0.1:8765` by default. The page accepts multiple PDF uploads or one local path, arXiv reference, DOI, or PDF URL per line. It provides language and field-preset controls, structured live progress, cancellation, failed-item retry, preview, and downloads for Markdown, CSV, evidence, and the run report. The API key is still read from `OPENAI_API_KEY`; it is never added to the page or job report.
+The service listens only on `http://127.0.0.1:8765` by default. The page accepts multiple PDF uploads or one local path, arXiv reference, DOI, or PDF URL per line. It provides language and field-preset controls, structured live progress, cancellation, failed-item retry, preview, and downloads for Markdown, CSV, evidence, and the run report. An API key can be entered per job in advanced settings or left blank to use `OPENAI_API_KEY`; entered values remain in server memory and are never written to job reports or caches.
 
 To avoid opening the system browser or to use a different port:
 

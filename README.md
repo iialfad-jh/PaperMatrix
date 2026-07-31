@@ -46,13 +46,16 @@ $env:OPENAI_API_KEY="your_relay_api_key_here"
 $env:OPENAI_BASE_URL="https://api.dwai.cloud/v1"
 $env:OPENAI_API_MODE="responses"
 $env:PAPERMATRIX_MODEL="gpt-5.5"
+$env:PAPERMATRIX_REASONING_EFFORT="medium"
 ```
 
 也可以在单次运行时传入：
 
 ```powershell
-papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai.cloud/v1 --api-mode responses
+papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai.cloud/v1 --api-mode responses --reasoning-effort medium
 ```
+
+推理强度支持 `auto`、`low`、`medium` 和 `high`。`auto` 不向服务商发送额外参数，使用模型默认值；论文结构化抽取通常建议从 `low` 或 `medium` 开始。
 
 ## 使用
 
@@ -64,7 +67,7 @@ papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai
 papermatrix web
 ```
 
-服务默认只监听 `http://127.0.0.1:8765`。页面支持上传多个 PDF，或逐行输入本地路径、arXiv、DOI 和 PDF URL；可以选择输出语言与字段预设，实时查看结构化进度，取消任务、重试失败项，并预览或下载 Markdown、CSV、证据文件和运行报告。API Key 仍从 `OPENAI_API_KEY` 环境变量读取，不会写入页面或任务报告。
+服务默认只监听 `http://127.0.0.1:8765`。页面支持上传多个 PDF，或逐行输入本地路径、arXiv、DOI 和 PDF URL；可以选择输出语言与字段预设，实时查看结构化进度，取消任务、重试失败项，并预览或下载 Markdown、CSV、证据文件和运行报告。API Key 可以在高级设置中按任务输入，也可以留空读取 `OPENAI_API_KEY`；输入值只保留在服务内存中，不会写入任务报告或缓存。
 
 如果不希望自动打开系统浏览器，或需要修改端口：
 
