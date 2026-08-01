@@ -102,6 +102,7 @@ summary { padding: 14px 2px; color: var(--muted); font-size: 12px; font-weight: 
 .primary b { font-size: 21px; color: #ffb19d; }
 .secondary { border: 1px solid var(--ink); border-radius: 3px; padding: 9px 13px; background: transparent; color: var(--ink); font-size: 12px; font-weight: 750; }
 .secondary:hover { background: var(--ink); color: #fff; }
+.secondary:disabled { opacity: .55; cursor: wait; }
 .secondary.danger { color: var(--danger); border-color: #d7a49f; }
 .secondary.danger:hover { color: #fff; background: var(--danger); }
 
@@ -132,7 +133,10 @@ summary { padding: 14px 2px; color: var(--muted); font-size: 12px; font-weight: 
 .event-dot { width: 8px; height: 8px; margin-top: 4px; border: 2px solid var(--teal); border-radius: 50%; }
 .event small { color: var(--muted); }
 .job-actions { display: flex; gap: 10px; margin-top: 18px; }
+.provider-probe-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.provider-probe-row .hint { margin: 0; }
 .notice { margin-top: 16px; padding: 11px 12px; border-radius: 3px; font-size: 12px; line-height: 1.5; }
+.notice.success { color: #0f6663; border: 1px solid #9acbc2; background: var(--teal-soft); }
 .notice.error { color: #77271f; border: 1px solid #e0aaa3; background: #fae6e2; }
 
 .results { margin-top: 30px; }

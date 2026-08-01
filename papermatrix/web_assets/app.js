@@ -190,6 +190,29 @@ async function submitJob(event) {
   }
 }
 
+async function testProvider() {
+  const button = $("#test-provider");
+  const status = $("#provider-probe-status");
+  const formData = new FormData();
+  ["language", "model", "api_key", "base_url", "api_mode", "reasoning_effort"].forEach((name) => {
+    formData.set(name, $("#job-form").elements.namedItem(name).value);
+  });
+  status.className = "notice hidden";
+  button.disabled = true;
+  button.textContent = "正在测试…";
+  try {
+    const payload = await api("/api/provider-probe", { method: "POST", body: formData });
+    status.textContent = payload.message;
+    status.className = "notice success";
+  } catch (error) {
+    status.textContent = `连接失败：${error.message}`;
+    status.className = "notice error";
+  } finally {
+    button.disabled = false;
+    button.textContent = "测试连接";
+  }
+}
+
 async function loadJobs() {
   try {
     const payload = await api("/api/jobs");
@@ -244,6 +267,7 @@ $("#job-form").addEventListener("submit", submitJob);
 $("#files").addEventListener("change", updateFileNote);
 $("#preset").addEventListener("change", toggleCustomFields);
 $("#model").addEventListener("input", updateReasoningAvailability);
+$("#test-provider").addEventListener("click", testProvider);
 $("#cancel-job").addEventListener("click", cancelCurrent);
 $("#retry-job").addEventListener("click", retryCurrent);
 $("#recent-jobs").addEventListener("click", (event) => {

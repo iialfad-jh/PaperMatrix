@@ -182,6 +182,76 @@ def test_web_passes_api_key_in_memory_without_persisting_it(tmp_path: Path, monk
     assert secret not in job.run_report_path.read_text(encoding="utf-8")
 
 
+def test_web_provider_probe_uses_current_configuration_without_exposing_key(tmp_path: Path, monkeypatch):
+    captured = {}
+    secret = "sk-probe-secret"
+
+    class FakeOpenAILLMClient:
+        def __init__(self, **kwargs):
+            captured["kwargs"] = kwargs
+
+        def extract_json(self, paper_id, chunks, **kwargs):
+            captured["probe"] = {"paper_id": paper_id, "chunks": chunks, **kwargs}
+            return {"paper_id": paper_id, "title": "Probe", "fields": {}}
+
+        def config_summary(self):
+            return {
+                "model": captured["kwargs"]["model"],
+                "api_mode": captured["kwargs"]["api_mode"],
+                "reasoning_effort": captured["kwargs"]["reasoning_effort"],
+                "base_url": captured["kwargs"]["base_url"],
+                "language": captured["kwargs"]["language"],
+            }
+
+    monkeypatch.setattr("papermatrix.web.OpenAILLMClient", FakeOpenAILLMClient)
+
+    with TestClient(create_app(tmp_path)) as client:
+        response = client.post(
+            "/api/provider-probe",
+            data={
+                "language": "en",
+                "model": "gpt-5.5",
+                "api_key": secret,
+                "base_url": "https://relay.example/v1",
+                "api_mode": "responses",
+                "reasoning_effort": "low",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["ok"] is True
+    assert response.json()["config"]["model"] == "gpt-5.5"
+    assert secret not in response.text
+    assert captured["kwargs"]["api_key"] == secret
+    assert captured["kwargs"]["max_retries"] == 0
+    assert captured["probe"]["paper_id"] == "provider-probe"
+    assert captured["probe"]["field_names"] == ["problem"]
+
+
+def test_web_provider_probe_sanitizes_failures_and_validates_config(tmp_path: Path, monkeypatch):
+    secret = "sk-probe-secret"
+
+    class FailingOpenAILLMClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def extract_json(self, *_args, **_kwargs):
+            raise RuntimeError(f"provider rejected {secret}")
+
+    monkeypatch.setattr("papermatrix.web.OpenAILLMClient", FailingOpenAILLMClient)
+
+    with TestClient(create_app(tmp_path)) as client:
+        failed = client.post("/api/provider-probe", data={"api_key": secret})
+        invalid = client.post("/api/provider-probe", data={"reasoning_effort": "extreme"})
+
+    assert failed.status_code == 502
+    assert "RuntimeError" in failed.json()["detail"]
+    assert secret not in failed.text
+    assert "***" in failed.json()["detail"]
+    assert invalid.status_code == 422
+    assert "reasoning_effort" in invalid.json()["detail"]
+
+
 def test_web_reuses_the_same_content_addressed_upload(tmp_path: Path):
     def runner(config, paper_plan, _llm_factory, **kwargs):
         return write_success_result(config, paper_plan, Path(kwargs["run_report_path"]), kwargs["progress_callback"])

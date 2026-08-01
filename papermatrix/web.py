@@ -460,6 +460,59 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
             },
         }
 
+    @app.post("/api/provider-probe")
+    def provider_probe(
+        language: str = Form("zh"),
+        model: str = Form(""),
+        api_key: str = Form(""),
+        base_url: str = Form(""),
+        api_mode: str = Form(""),
+        reasoning_effort: str = Form("auto"),
+    ):
+        submitted_api_key = api_key.strip()
+        try:
+            llm_config = resolve_openai_config(
+                model=model.strip() or None,
+                base_url=base_url.strip() or None,
+                api_mode=api_mode.strip() or None,
+                reasoning_effort=reasoning_effort.strip() or None,
+                language=language,
+            )
+            llm_client = OpenAILLMClient(
+                model=llm_config["model"],
+                api_key=submitted_api_key or None,
+                base_url=llm_config["base_url"] or None,
+                api_mode=llm_config["api_mode"],
+                reasoning_effort=llm_config["reasoning_effort"],
+                language=llm_config["language"],
+                max_retries=0,
+            )
+            llm_client.extract_json(
+                "provider-probe",
+                [
+                    {
+                        "chunk_id": "provider-probe_c0",
+                        "paper_id": "provider-probe",
+                        "pages": [1],
+                        "text": "This is a minimal provider connection test for an academic extraction service.",
+                    }
+                ],
+                field_names=["problem"],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            message = str(exc)
+            if submitted_api_key:
+                message = message.replace(submitted_api_key, "***")
+            detail = f"{exc.__class__.__name__}: {message}"[:1200]
+            raise HTTPException(status_code=502, detail=detail) from exc
+        return {
+            "ok": True,
+            "message": "模型服务连接成功，当前配置可以使用。",
+            "config": llm_client.config_summary(),
+        }
+
     @app.get("/api/jobs")
     def jobs():
         return {"jobs": [job.as_dict() for job in job_manager.list()]}

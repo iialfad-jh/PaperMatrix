@@ -103,6 +103,11 @@
                     <input id="base-url" name="base_url" type="url" placeholder="留空使用 OpenAI 默认地址">
                   </div>
                 </div>
+                <div class="provider-probe-row">
+                  <button id="test-provider" class="secondary" type="button" data-testid="test-provider">测试连接</button>
+                  <p class="hint">发送一条最小模型请求，不需要上传论文。</p>
+                </div>
+                <div id="provider-probe-status" class="notice hidden" role="status" aria-live="polite"></div>
                 <div class="field-grid three">
                   <div><label for="max-chars">块字符数</label><input id="max-chars" name="max_chars" type="number" min="1" max="100000" value="3500"></div>
                   <div><label for="max-chunks">最多选块</label><input id="max-chunks" name="max_chunks" type="number" min="1" max="100" value="12"></div>

@@ -67,7 +67,7 @@ papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai
 papermatrix web
 ```
 
-服务默认只监听 `http://127.0.0.1:8765`。页面支持上传多个 PDF，或逐行输入本地路径、arXiv、DOI 和 PDF URL；可以选择输出语言与字段预设，实时查看结构化进度，取消任务、重试失败项，并预览或下载 Markdown、CSV、证据文件和运行报告。API Key 可以在高级设置中按任务输入，也可以留空读取 `OPENAI_API_KEY`；输入值只保留在服务内存中，不会写入任务报告或缓存。
+服务默认只监听 `http://127.0.0.1:8765`。页面支持上传多个 PDF，或逐行输入本地路径、arXiv、DOI 和 PDF URL；可以选择输出语言与字段预设，实时查看结构化进度，取消任务、重试失败项，并预览或下载 Markdown、CSV、证据文件和运行报告。高级设置中的“测试连接”可以在上传论文前验证当前模型配置。API Key 可以按任务输入，也可以留空读取 `OPENAI_API_KEY`；输入值只保留在服务内存中，不会写入任务报告或缓存。
 
 如果不希望自动打开系统浏览器，或需要修改端口：
 
