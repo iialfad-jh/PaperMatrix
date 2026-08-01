@@ -252,6 +252,20 @@ def test_web_provider_probe_sanitizes_failures_and_validates_config(tmp_path: Pa
     assert "reasoning_effort" in invalid.json()["detail"]
 
 
+def test_web_ui_exposes_browser_local_settings_persistence(tmp_path: Path):
+    with TestClient(create_app(tmp_path)) as client:
+        page = client.get("/")
+        script = client.get("/assets/app.js")
+
+    assert page.status_code == 200
+    assert 'id="remember-api-key"' in page.text
+    assert "记住 API Key（仅此浏览器）" in page.text
+    assert script.status_code == 200
+    assert 'settingsStorageKey = "papermatrix.web.settings.v1"' in script.text
+    assert "localStorage.setItem" in script.text
+    assert "restoreSettings()" in script.text
+
+
 def test_web_reuses_the_same_content_addressed_upload(tmp_path: Path):
     def runner(config, paper_plan, _llm_factory, **kwargs):
         return write_success_result(config, paper_plan, Path(kwargs["run_report_path"]), kwargs["progress_callback"])

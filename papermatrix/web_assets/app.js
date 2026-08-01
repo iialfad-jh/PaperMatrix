@@ -6,6 +6,11 @@ const statusLabels = {
 };
 const phaseLabels = { import: "导入来源", pdf: "解析 PDF", llm: "抽取字段", paper: "处理论文", cache: "检查缓存", export: "导出结果", run: "运行任务" };
 const artifactLabels = { markdown: "Markdown", csv: "CSV", evidence: "证据", report: "运行报告", import_report: "导入报告" };
+const settingsStorageKey = "papermatrix.web.settings.v1";
+const persistedValueNames = [
+  "language", "preset", "fields", "model", "base_url", "api_mode", "reasoning_effort", "max_chars", "max_chunks", "retries"
+];
+const persistedCheckboxNames = ["force", "fail_fast"];
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
@@ -24,6 +29,48 @@ function showError(target, message) {
   target.classList.toggle("hidden", !message);
 }
 
+function readSavedSettings() {
+  try {
+    const settings = JSON.parse(localStorage.getItem(settingsStorageKey) || "null");
+    return settings && typeof settings === "object" ? settings : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveSettings() {
+  const form = $("#job-form");
+  const settings = {};
+  persistedValueNames.forEach((name) => {
+    const input = form.elements.namedItem(name);
+    if (input) settings[name] = input.value;
+  });
+  persistedCheckboxNames.forEach((name) => {
+    const input = form.elements.namedItem(name);
+    if (input) settings[name] = input.checked;
+  });
+  settings.remember_api_key = $("#remember-api-key").checked;
+  if (settings.remember_api_key) settings.api_key = $("#api-key").value;
+  try { localStorage.setItem(settingsStorageKey, JSON.stringify(settings)); } catch (_) { /* storage may be disabled */ }
+}
+
+function restoreSettings() {
+  const settings = readSavedSettings();
+  const form = $("#job-form");
+  persistedValueNames.forEach((name) => {
+    const input = form.elements.namedItem(name);
+    if (input && typeof settings[name] === "string") input.value = settings[name];
+  });
+  persistedCheckboxNames.forEach((name) => {
+    const input = form.elements.namedItem(name);
+    if (input && typeof settings[name] === "boolean") input.checked = settings[name];
+  });
+  $("#remember-api-key").checked = settings.remember_api_key === true;
+  if (settings.remember_api_key === true && typeof settings.api_key === "string") {
+    $("#api-key").value = settings.api_key;
+  }
+}
+
 async function loadConfig() {
   const config = await api("/api/config");
   const select = $("#preset");
@@ -33,6 +80,7 @@ async function loadConfig() {
   $("#model").placeholder = config.defaults.model;
   $("#api-mode").value = config.defaults.api_mode;
   $("#reasoning-effort").value = config.defaults.reasoning_effort;
+  restoreSettings();
   updateReasoningAvailability();
 }
 
@@ -178,7 +226,8 @@ async function submitJob(event) {
   try {
     const formData = new FormData(event.currentTarget);
     const job = await api("/api/jobs", { method: "POST", body: formData });
-    $("#api-key").value = "";
+    saveSettings();
+    if (!$("#remember-api-key").checked) $("#api-key").value = "";
     updateJob(job);
     loadJobs();
     connectEvents(job.id);
@@ -202,6 +251,7 @@ async function testProvider() {
   button.textContent = "正在测试…";
   try {
     const payload = await api("/api/provider-probe", { method: "POST", body: formData });
+    saveSettings();
     status.textContent = payload.message;
     status.className = "notice success";
   } catch (error) {
@@ -264,6 +314,7 @@ async function bootstrap() {
 }
 
 $("#job-form").addEventListener("submit", submitJob);
+$("#job-form").addEventListener("change", saveSettings);
 $("#files").addEventListener("change", updateFileNote);
 $("#preset").addEventListener("change", toggleCustomFields);
 $("#model").addEventListener("input", updateReasoningAvailability);

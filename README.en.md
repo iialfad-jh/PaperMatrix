@@ -67,7 +67,7 @@ Start the browser workspace:
 papermatrix web
 ```
 
-The service listens only on `http://127.0.0.1:8765` by default. The page accepts multiple PDF uploads or one local path, arXiv reference, DOI, or PDF URL per line. It provides language and field-preset controls, structured live progress, cancellation, failed-item retry, preview, and downloads for Markdown, CSV, evidence, and the run report. The advanced-settings connection test validates the current model configuration before any paper upload. An API key can be entered per job or left blank to use `OPENAI_API_KEY`; entered values remain in server memory and are never written to job reports or caches.
+The service listens only on `http://127.0.0.1:8765` by default. The page accepts multiple PDF uploads or one local path, arXiv reference, DOI, or PDF URL per line. It provides language and field-preset controls, structured live progress, cancellation, failed-item retry, preview, and downloads for Markdown, CSV, evidence, and the run report. The advanced-settings connection test validates the current model configuration before any paper upload. The page restores the most recently used run options from browser storage. An API key can be entered per job, left blank to use `OPENAI_API_KEY`, or explicitly remembered in browser-local storage. Keys are never written to job reports, project caches, or Git.
 
 To avoid opening the system browser or to use a different port:
 

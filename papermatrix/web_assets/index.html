@@ -96,7 +96,8 @@
                   <div>
                     <label for="api-key">API Key</label>
                     <input id="api-key" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="留空使用 OPENAI_API_KEY">
-                    <p class="hint">仅保存在当前任务内存中，不写入结果或缓存。</p>
+                    <label class="check remember-key"><input id="remember-api-key" name="remember_api_key" type="checkbox"><span>记住 API Key（仅此浏览器）</span></label>
+                    <p class="hint">勾选后保存在浏览器本地存储中，请仅在可信设备使用。</p>
                   </div>
                   <div>
                     <label for="base-url">兼容 API 地址</label>
