@@ -3,13 +3,20 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from papermatrix import cli
 from papermatrix.pipeline import PipelineResult, ProgressEvent
 from papermatrix.run_report import create_run_report, save_run_report
-from papermatrix.web import JobManager, create_app
+from papermatrix.web import JobManager, _classify_service_error, create_app
+
+
+class ProviderError(RuntimeError):
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def wait_for_status(client: TestClient, job_id: str, expected: set[str], timeout: float = 3.0) -> dict:
@@ -36,6 +43,29 @@ def write_success_result(config, paper_plan, run_report_path: Path, progress_cal
     report["items"][0]["stages"].extend(["extracted", "exported"])
     save_run_report(report, run_report_path)
     return PipelineResult(True, False, [], report, run_report_path, config.out, csv_path, evidence_path)
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_code"),
+    [
+        (ProviderError("The api_key client option must be set"), "api_key_missing"),
+        (ProviderError("Incorrect API key provided", 401), "api_key_invalid"),
+        (ProviderError("DNS name resolution failed"), "network_unreachable"),
+        (ProviderError("The requested model does not exist", 404), "model_not_found"),
+        (ProviderError("This endpoint is not supported for chat completions", 400), "api_mode_incompatible"),
+        (ProviderError("insufficient_quota", 429), "rate_or_quota_limit"),
+        (ProviderError("Request timed out"), "request_timeout"),
+        (ProviderError("SSL certificate verify failed"), "tls_or_proxy"),
+    ],
+)
+def test_web_classifies_actionable_provider_errors(error: Exception, expected_code: str):
+    detail = _classify_service_error(error)
+
+    assert detail["code"] == expected_code
+    assert detail["title"]
+    assert detail["message"]
+    assert detail["action"]
+    assert detail["technical"]
 
 
 def test_web_job_upload_streams_progress_and_previews_results(tmp_path: Path):
@@ -66,6 +96,35 @@ def test_web_job_upload_streams_progress_and_previews_results(tmp_path: Path):
         events = client.get(f"/api/jobs/{job_id}/events").text
         assert '"type":"progress"' in events
         assert '"status":"completed"' in events
+
+
+def test_web_job_surfaces_the_run_report_failure_reason(tmp_path: Path):
+    def runner(config, paper_plan, _llm_factory, **kwargs):
+        report = create_run_report(config.report_config(), paper_plan)
+        report["items"][0]["status"] = "llm_failed"
+        report["items"][0]["error"] = {
+            "type": "AuthenticationError",
+            "message": "Incorrect API key provided: sk-job-secret",
+            "transient": False,
+            "status_code": 401,
+        }
+        report_path = Path(kwargs["run_report_path"])
+        save_run_report(report, report_path)
+        return PipelineResult(False, False, [], report, report_path)
+
+    manager = JobManager(tmp_path, pipeline_runner=runner)
+    with TestClient(create_app(tmp_path, manager=manager)) as client:
+        response = client.post(
+            "/api/jobs",
+            data={"project_id": "classified-failure", "preset": "general", "api_key": "sk-job-secret"},
+            files={"files": ("paper.pdf", b"%PDF-1.4\n", "application/pdf")},
+        )
+        final = wait_for_status(client, response.json()["id"], {"failed"})
+
+    assert final["error_detail"]["code"] == "api_key_invalid"
+    assert final["error_detail"]["title"] == "API Key 无效或无权限"
+    assert "sk-job-secret" not in final["error_detail"]["technical"]
+    assert "No paper could be exported" not in final["error"]
 
 
 def test_web_rejects_unsafe_project_ids_and_non_pdf_uploads(tmp_path: Path):
@@ -248,6 +307,9 @@ def test_web_provider_probe_sanitizes_failures_and_validates_config(tmp_path: Pa
     assert "RuntimeError" in failed.json()["detail"]
     assert secret not in failed.text
     assert "***" in failed.json()["detail"]
+    assert failed.json()["error"]["code"] == "unknown"
+    assert failed.json()["error"]["title"] == "模型服务请求失败"
+    assert failed.json()["error"]["action"]
     assert invalid.status_code == 422
     assert "reasoning_effort" in invalid.json()["detail"]
 
@@ -264,6 +326,9 @@ def test_web_ui_exposes_browser_local_settings_persistence(tmp_path: Path):
     assert 'settingsStorageKey = "papermatrix.web.settings.v1"' in script.text
     assert "localStorage.setItem" in script.text
     assert "restoreSettings()" in script.text
+    assert "job.error_detail || job.error" in script.text
+    assert 'action.className = "error-action"' in script.text
+    assert 'summary.textContent = "技术详情"' in script.text
 
 
 def test_web_reuses_the_same_content_addressed_upload(tmp_path: Path):

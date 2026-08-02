@@ -43,6 +43,173 @@ ACTIVE_STATUSES = {"queued", "running", "cancelling"}
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 
+ERROR_GUIDANCE = {
+    "api_key_missing": (
+        "未检测到 API Key",
+        "当前任务没有可用的 API Key。",
+        "请在高级设置中填写 API Key，或设置 OPENAI_API_KEY 后重启本地服务。",
+    ),
+    "api_key_invalid": (
+        "API Key 无效或无权限",
+        "模型服务拒绝了当前凭据。",
+        "请检查 Key 是否完整、未过期，并确认它有权访问当前服务和模型。",
+    ),
+    "network_unreachable": (
+        "无法连接模型服务",
+        "本地服务未能与模型 API 建立网络连接。",
+        "请检查网络、兼容 API 地址、DNS 和防火墙，然后再次测试连接。",
+    ),
+    "model_not_found": (
+        "模型不存在或无权访问",
+        "当前服务找不到所选模型，或当前账号没有访问权限。",
+        "请核对模型名称，并确认该模型在当前 API 地址和账号下可用。",
+    ),
+    "api_mode_incompatible": (
+        "API 模式不兼容",
+        "当前服务不支持所选 API 模式或请求端点。",
+        "请在 Chat Completions 与 Responses 之间切换后重新测试连接。",
+    ),
+    "rate_or_quota_limit": (
+        "请求频率或余额受限",
+        "模型服务因限流、额度、余额或计费状态拒绝了请求。",
+        "请稍后重试，并检查服务商的用量、余额、额度和计费状态。",
+    ),
+    "request_timeout": (
+        "模型请求超时",
+        "模型服务未在限定时间内返回结果。",
+        "请重试；若持续发生，请检查 API 地址并减少单次任务规模或文本块数量。",
+    ),
+    "tls_or_proxy": (
+        "TLS 或代理连接失败",
+        "HTTPS 证书校验或代理连接阻止了模型请求。",
+        "请检查系统时间、代理设置、证书链，以及网络中的 HTTPS 检查软件。",
+    ),
+    "pdf_processing": (
+        "PDF 处理失败",
+        "论文文件无法正常读取或解析。",
+        "请确认文件是完整、未加密的 PDF；必要时重新下载后再试。",
+    ),
+    "unknown": (
+        "任务执行失败",
+        "PaperMatrix 未能完成当前任务。",
+        "请查看下方技术详情和运行报告；若是临时服务错误，可重试失败项。",
+    ),
+}
+
+
+def _classify_service_error(
+    error: Exception | dict[str, Any] | str,
+    *,
+    secret: str | None = None,
+    failure_stage: str | None = None,
+) -> dict[str, Any]:
+    if isinstance(error, dict):
+        error_type = str(error.get("type") or "Error")
+        message = str(error.get("message") or "")
+        status_code = error.get("status_code")
+    elif isinstance(error, Exception):
+        error_type = error.__class__.__name__
+        message = str(error)
+        status_code = getattr(error, "status_code", None)
+        if status_code is None:
+            response = getattr(error, "response", None)
+            status_code = getattr(response, "status_code", None)
+    else:
+        error_type = "Error"
+        message = str(error)
+        status_code = None
+
+    combined = f"{error_type} {message}".lower()
+    if ("api key" in combined or "api_key" in combined) and any(
+        marker in combined for marker in ("must be set", "missing", "not provided", "required")
+    ):
+        code = "api_key_missing"
+    elif status_code in {401, 403} or any(
+        marker in combined
+        for marker in ("authenticationerror", "permissiondenied", "invalid_api_key", "incorrect api key", "unauthorized")
+    ):
+        code = "api_key_invalid"
+    elif status_code in {402, 429} or any(
+        marker in combined
+        for marker in (
+            "ratelimit",
+            "rate limit",
+            "insufficient_quota",
+            "quota",
+            "billing",
+            "credit balance",
+            "余额",
+        )
+    ):
+        code = "rate_or_quota_limit"
+    elif any(
+        marker in combined
+        for marker in ("model_not_found", "model does not exist", "model not found", "no access to model")
+    ) or (status_code == 404 and "model" in combined):
+        code = "model_not_found"
+    elif status_code in {404, 405} or any(
+        marker in combined
+        for marker in (
+            "unknown url",
+            "unsupported endpoint",
+            "chat.completions",
+            "responses endpoint",
+            "api mode",
+            "method not allowed",
+        )
+    ) or ("endpoint" in combined and any(marker in combined for marker in ("not supported", "incompatible"))):
+        code = "api_mode_incompatible"
+    elif any(
+        marker in combined
+        for marker in ("ssl", "tls", "certificate verify", "certificate_verify", "proxyerror", "proxy error")
+    ):
+        code = "tls_or_proxy"
+    elif any(marker in combined for marker in ("timeout", "timed out", "apitimeouterror")):
+        code = "request_timeout"
+    elif any(
+        marker in combined
+        for marker in (
+            "apiconnectionerror",
+            "connectionerror",
+            "connection refused",
+            "connection reset",
+            "name resolution",
+            "getaddrinfo",
+            "network is unreachable",
+            "dns",
+        )
+    ):
+        code = "network_unreachable"
+    elif failure_stage == "pdf_failed":
+        code = "pdf_processing"
+    else:
+        code = "unknown"
+
+    title, friendly_message, action = ERROR_GUIDANCE[code]
+    technical = f"{error_type}: {message}".strip()
+    if secret:
+        technical = technical.replace(secret, "***")
+    return {
+        "code": code,
+        "title": title,
+        "message": friendly_message,
+        "action": action,
+        "technical": technical[:1200],
+        "status_code": status_code,
+    }
+
+
+def _classify_run_failure(report: dict[str, Any], *, secret: str | None = None) -> dict[str, Any]:
+    export_error = report.get("export_error")
+    if isinstance(export_error, dict):
+        return _classify_service_error(export_error, secret=secret)
+    for item in report.get("items", []):
+        item_error = item.get("error")
+        if isinstance(item_error, dict):
+            return _classify_service_error(item_error, secret=secret, failure_stage=item.get("status"))
+    return _classify_service_error("No paper could be exported", secret=secret)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -79,6 +246,7 @@ class WebJob:
     latest_progress: dict[str, Any] | None = None
     summary: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    error_detail: dict[str, Any] | None = None
     artifacts: dict[str, Path] = field(default_factory=dict)
     run_report_path: Path | None = None
     token: CancellationToken = field(default_factory=CancellationToken, repr=False)
@@ -91,11 +259,19 @@ class WebJob:
             self.events.append(event)
             self.condition.notify_all()
 
-    def set_status(self, status: str, *, error: str | None = None) -> None:
+    def set_status(
+        self,
+        status: str,
+        *,
+        error: str | None = None,
+        error_detail: dict[str, Any] | None = None,
+    ) -> None:
         with self.condition:
             self.status = status
             if error is not None:
                 self.error = error
+            if error_detail is not None:
+                self.error_detail = error_detail
             if status in TERMINAL_STATUSES:
                 self.finished_at = _now()
             snapshot = self.as_dict()
@@ -133,6 +309,7 @@ class WebJob:
             "latest_progress": self.latest_progress,
             "summary": self.summary,
             "error": self.error,
+            "error_detail": self.error_detail,
             "artifacts": artifacts,
             "can_cancel": self.status in ACTIVE_STATUSES,
             "can_retry": can_retry,
@@ -281,9 +458,14 @@ class JobManager:
             elif result.success:
                 job.set_status("completed")
             else:
-                job.set_status("failed", error="No paper could be exported. Check the run report for details.")
+                detail = _classify_run_failure(result.run_report, secret=job.spec.api_key)
+                job.set_status("failed", error=detail["message"], error_detail=detail)
         except Exception as exc:
-            job.set_status("cancelled" if job.token.is_cancelled() else "failed", error=str(exc)[:2000])
+            if job.token.is_cancelled():
+                job.set_status("cancelled")
+            else:
+                detail = _classify_service_error(exc, secret=job.spec.api_key)
+                job.set_status("failed", error=detail["message"], error_detail=detail)
 
     def _prepare_pipeline(self, job: WebJob) -> dict[str, Any]:
         spec = job.spec
@@ -502,11 +684,17 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
-            message = str(exc)
-            if submitted_api_key:
-                message = message.replace(submitted_api_key, "***")
-            detail = f"{exc.__class__.__name__}: {message}"[:1200]
-            raise HTTPException(status_code=502, detail=detail) from exc
+            error_detail = _classify_service_error(exc, secret=submitted_api_key)
+            if error_detail["code"] == "unknown":
+                error_detail.update(
+                    title="模型服务请求失败",
+                    message="连接已建立，但模型服务未能完成测试请求。",
+                    action="请核对当前服务商配置，并查看技术详情后重试。",
+                )
+            return JSONResponse(
+                {"detail": error_detail["technical"], "error": error_detail},
+                status_code=502,
+            )
         return {
             "ok": True,
             "message": "模型服务连接成功，当前配置可以使用。",

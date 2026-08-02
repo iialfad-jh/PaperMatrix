@@ -20,13 +20,51 @@ async function api(url, options = {}) {
   const response = await fetch(url, options);
   let payload = {};
   try { payload = await response.json(); } catch (_) { /* no JSON body */ }
-  if (!response.ok) throw new Error(payload.detail || `请求失败（${response.status}）`);
+  if (!response.ok) {
+    const detail = payload.error && typeof payload.error === "object" ? payload.error : null;
+    const requestError = new Error(detail?.message || payload.detail || `请求失败（${response.status}）`);
+    requestError.detail = detail;
+    throw requestError;
+  }
   return payload;
 }
 
-function showError(target, message) {
-  target.textContent = message;
-  target.classList.toggle("hidden", !message);
+function showError(target, error) {
+  target.replaceChildren();
+  if (!error) {
+    target.classList.add("hidden");
+    return;
+  }
+  target.classList.remove("hidden");
+  if (typeof error === "string") {
+    target.textContent = error;
+    return;
+  }
+
+  const title = document.createElement("strong");
+  title.className = "error-title";
+  title.textContent = error.title || "请求失败";
+  target.append(title);
+  if (error.message) {
+    const message = document.createElement("p");
+    message.textContent = error.message;
+    target.append(message);
+  }
+  if (error.action) {
+    const action = document.createElement("p");
+    action.className = "error-action";
+    action.textContent = `建议：${error.action}`;
+    target.append(action);
+  }
+  if (error.technical) {
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    const technical = document.createElement("code");
+    summary.textContent = "技术详情";
+    technical.textContent = error.technical;
+    details.append(summary, technical);
+    target.append(details);
+  }
 }
 
 function readSavedSettings() {
@@ -162,7 +200,7 @@ function updateJob(job) {
   $("#progress-bar").style.width = `${value}%`;
   const label = job.latest_progress ? eventDescription(job.latest_progress) : (statusLabels[job.status] || "准备中");
   $("#progress-label").innerHTML = `<span>${escapeHtml(label)}</span><b>${value}%</b>`;
-  showError($("#job-error"), job.error || "");
+  showError($("#job-error"), job.error_detail || job.error || "");
   $("#cancel-job").classList.toggle("hidden", !job.can_cancel);
   $("#retry-job").classList.toggle("hidden", !job.can_retry);
   renderEvents();
@@ -255,8 +293,8 @@ async function testProvider() {
     status.textContent = payload.message;
     status.className = "notice success";
   } catch (error) {
-    status.textContent = `连接失败：${error.message}`;
     status.className = "notice error";
+    showError(status, error.detail || { title: "连接失败", message: error.message });
   } finally {
     button.disabled = false;
     button.textContent = "测试连接";
