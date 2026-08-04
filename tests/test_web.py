@@ -127,6 +127,58 @@ def test_web_job_surfaces_the_run_report_failure_reason(tmp_path: Path):
     assert "No paper could be exported" not in final["error"]
 
 
+def test_web_job_summarizes_mixed_paper_failures(tmp_path: Path):
+    secret = "sk-mixed-secret"
+
+    def runner(config, paper_plan, _llm_factory, **kwargs):
+        report = create_run_report(config.report_config(), paper_plan)
+        report["items"][0]["status"] = "exported"
+        report["items"][0]["stages"].extend(["extracted", "exported"])
+        report["items"][1]["status"] = "llm_failed"
+        report["items"][1]["error"] = {
+            "type": "RateLimitError",
+            "message": f"quota exhausted for {secret}",
+            "transient": True,
+            "status_code": 429,
+        }
+        report["items"][2]["status"] = "pdf_failed"
+        report["items"][2]["error"] = {
+            "type": "FileDataError",
+            "message": "cannot open broken PDF",
+            "transient": False,
+            "status_code": None,
+        }
+        report_path = Path(kwargs["run_report_path"])
+        save_run_report(report, report_path)
+        return PipelineResult(False, False, [], report, report_path)
+
+    manager = JobManager(tmp_path, pipeline_runner=runner)
+    with TestClient(create_app(tmp_path, manager=manager)) as client:
+        response = client.post(
+            "/api/jobs",
+            data={"project_id": "mixed-failure", "preset": "general", "api_key": secret},
+            files=[
+                ("files", ("ok.pdf", b"%PDF-1.4\nok", "application/pdf")),
+                ("files", ("quota.pdf", b"%PDF-1.4\nquota", "application/pdf")),
+                ("files", ("broken.pdf", b"%PDF-1.4\nbroken", "application/pdf")),
+            ],
+        )
+        final = wait_for_status(client, response.json()["id"], {"failed"})
+
+    summary = final["error_detail"]["failure_summary"]
+    assert final["summary"]["total"] == 3
+    assert final["summary"]["exported"] == 1
+    assert final["error_detail"]["code"] == "rate_or_quota_limit"
+    assert "已导出 1/3 篇论文，2 篇失败" in final["error"]
+    assert summary["total"] == 3
+    assert summary["exported"] == 1
+    assert summary["failed"] == 2
+    assert [group["code"] for group in summary["groups"]] == ["rate_or_quota_limit", "pdf_processing"]
+    assert any("quota.pdf" in paper["filename"] for paper in summary["groups"][0]["papers"])
+    assert any("broken.pdf" in paper["filename"] for paper in summary["groups"][1]["papers"])
+    assert secret not in json.dumps(final, ensure_ascii=False)
+
+
 def test_web_rejects_unsafe_project_ids_and_non_pdf_uploads(tmp_path: Path):
     with TestClient(create_app(tmp_path)) as client:
         unsafe = client.post(

@@ -65,6 +65,9 @@ function showError(target, error) {
     action.textContent = `建议：${error.action}`;
     target.append(action);
   }
+  if (error.failure_summary) {
+    target.append(renderFailureSummary(error.failure_summary));
+  }
   if (error.technical) {
     const details = document.createElement("details");
     const summary = document.createElement("summary");
@@ -74,6 +77,36 @@ function showError(target, error) {
     details.append(summary, technical);
     target.append(details);
   }
+}
+
+function renderFailureSummary(summary) {
+  const wrap = document.createElement("div");
+  wrap.className = "failure-summary";
+  const stats = document.createElement("p");
+  stats.textContent = `论文汇总：${summary.exported || 0}/${summary.total || 0} 篇已导出，${summary.failed || 0} 篇失败。`;
+  wrap.append(stats);
+  (summary.groups || []).forEach((group) => {
+    const section = document.createElement("section");
+    const heading = document.createElement("strong");
+    const list = document.createElement("ul");
+    heading.textContent = `${group.title || "失败"}（${group.count || 0} 篇）`;
+    section.append(heading);
+    (group.papers || []).slice(0, 6).forEach((paper) => {
+      const item = document.createElement("li");
+      const name = paper.filename || paper.paper_id || "paper";
+      item.textContent = paper.status ? `${name} · ${paper.status}` : name;
+      if (paper.technical) item.title = paper.technical;
+      list.append(item);
+    });
+    if ((group.papers || []).length > 6) {
+      const item = document.createElement("li");
+      item.textContent = `还有 ${(group.papers || []).length - 6} 篇，请查看运行报告。`;
+      list.append(item);
+    }
+    section.append(list);
+    wrap.append(section);
+  });
+  return wrap;
 }
 
 function setSettingsStatus(message, tone = "") {

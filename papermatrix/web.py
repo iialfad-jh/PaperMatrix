@@ -203,11 +203,66 @@ def _classify_run_failure(report: dict[str, Any], *, secret: str | None = None) 
     export_error = report.get("export_error")
     if isinstance(export_error, dict):
         return _classify_service_error(export_error, secret=secret)
+    failed = []
     for item in report.get("items", []):
         item_error = item.get("error")
         if isinstance(item_error, dict):
-            return _classify_service_error(item_error, secret=secret, failure_stage=item.get("status"))
-    return _classify_service_error("No paper could be exported", secret=secret)
+            failed.append((item, _classify_service_error(item_error, secret=secret, failure_stage=item.get("status"))))
+    if not failed:
+        return _classify_service_error("No paper could be exported", secret=secret)
+
+    primary = dict(failed[0][1])
+    primary["failure_summary"] = _run_failure_summary(report, failed)
+    if primary["failure_summary"]["total"] > 1:
+        summary = primary["failure_summary"]
+        lead_group = summary["groups"][0] if summary["groups"] else None
+        primary["message"] = f"已导出 {summary['exported']}/{summary['total']} 篇论文，{summary['failed']} 篇失败。"
+        if lead_group:
+            primary["message"] += f" 主要原因：{lead_group['title']}（{lead_group['count']} 篇）。"
+    return primary
+
+
+def _run_failure_summary(report: dict[str, Any], failed: list[tuple[dict[str, Any], dict[str, Any]]]) -> dict[str, Any]:
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    items = report.get("items", [])
+    grouped: dict[str, dict[str, Any]] = {}
+    for index, (item, detail) in enumerate(failed):
+        code = str(detail.get("code") or "unknown")
+        group = grouped.setdefault(
+            code,
+            {
+                "code": code,
+                "title": detail.get("title") or ERROR_GUIDANCE["unknown"][0],
+                "count": 0,
+                "first_index": index,
+                "papers": [],
+            },
+        )
+        group["count"] += 1
+        group["papers"].append(
+            {
+                "paper_id": str(item.get("paper_id") or ""),
+                "filename": _failure_item_filename(item),
+                "status": str(item.get("status") or ""),
+                "technical": str(detail.get("technical") or "")[:500],
+            }
+        )
+    groups = sorted(grouped.values(), key=lambda group: (-int(group["count"]), int(group["first_index"])))
+    for group in groups:
+        group.pop("first_index", None)
+    return {
+        "total": int(summary.get("total") or len(items)),
+        "exported": int(summary.get("exported") or 0),
+        "failed": len(failed),
+        "groups": groups,
+    }
+
+
+def _failure_item_filename(item: dict[str, Any]) -> str:
+    pdf_path = item.get("pdf_path")
+    if isinstance(pdf_path, str) and pdf_path:
+        return Path(pdf_path).name
+    return str(item.get("paper_id") or "paper")
 
 
 def _now() -> str:
