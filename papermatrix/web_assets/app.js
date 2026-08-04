@@ -11,6 +11,15 @@ const persistedValueNames = [
   "language", "preset", "fields", "model", "base_url", "api_mode", "reasoning_effort", "max_chars", "max_chunks", "retries"
 ];
 const persistedCheckboxNames = ["force", "fail_fast"];
+const legacySettingsNames = {
+  apiMode: "api_mode",
+  reasoningEffort: "reasoning_effort",
+  maxChars: "max_chars",
+  maxChunks: "max_chunks",
+  failFast: "fail_fast",
+  rememberApiKey: "remember_api_key",
+  apiKey: "api_key"
+};
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
@@ -67,11 +76,31 @@ function showError(target, error) {
   }
 }
 
+function setSettingsStatus(message, tone = "") {
+  const target = $("#settings-status");
+  if (!target) return;
+  target.textContent = message || "";
+  target.className = message ? `hint settings-status ${tone}`.trim() : "hint settings-status hidden";
+}
+
+function normalizeSavedSettings(settings) {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return {};
+  const normalized = { ...settings };
+  Object.entries(legacySettingsNames).forEach(([legacyName, currentName]) => {
+    if (normalized[currentName] === undefined && typeof normalized[legacyName] !== "undefined") {
+      normalized[currentName] = normalized[legacyName];
+    }
+  });
+  return normalized;
+}
+
 function readSavedSettings() {
   try {
-    const settings = JSON.parse(localStorage.getItem(settingsStorageKey) || "null");
-    return settings && typeof settings === "object" ? settings : {};
+    const raw = localStorage.getItem(settingsStorageKey);
+    if (!raw) return {};
+    return normalizeSavedSettings(JSON.parse(raw));
   } catch (_) {
+    setSettingsStatus("无法读取浏览器保存的设置，已使用默认值。", "warning");
     return {};
   }
 }
@@ -89,7 +118,12 @@ function saveSettings() {
   });
   settings.remember_api_key = $("#remember-api-key").checked;
   if (settings.remember_api_key) settings.api_key = $("#api-key").value;
-  try { localStorage.setItem(settingsStorageKey, JSON.stringify(settings)); } catch (_) { /* storage may be disabled */ }
+  try {
+    localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
+    setSettingsStatus("");
+  } catch (_) {
+    setSettingsStatus("浏览器拒绝保存设置，本次仍可继续使用。", "warning");
+  }
 }
 
 function restoreSettings() {
@@ -351,17 +385,26 @@ async function bootstrap() {
   toggleCustomFields();
 }
 
-$("#job-form").addEventListener("submit", submitJob);
-$("#job-form").addEventListener("change", saveSettings);
-$("#files").addEventListener("change", updateFileNote);
-$("#preset").addEventListener("change", toggleCustomFields);
-$("#model").addEventListener("input", updateReasoningAvailability);
-$("#test-provider").addEventListener("click", testProvider);
-$("#cancel-job").addEventListener("click", cancelCurrent);
-$("#retry-job").addEventListener("click", retryCurrent);
-$("#recent-jobs").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-job-id]");
-  if (button) selectJob(button.dataset.jobId);
-});
+function bindUi() {
+  $("#job-form").addEventListener("submit", submitJob);
+  $("#job-form").addEventListener("change", saveSettings);
+  $("#files").addEventListener("change", updateFileNote);
+  $("#preset").addEventListener("change", toggleCustomFields);
+  $("#model").addEventListener("input", updateReasoningAvailability);
+  $("#test-provider").addEventListener("click", testProvider);
+  $("#cancel-job").addEventListener("click", cancelCurrent);
+  $("#retry-job").addEventListener("click", retryCurrent);
+  $("#recent-jobs").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-job-id]");
+    if (button) selectJob(button.dataset.jobId);
+  });
+}
 
-bootstrap();
+if (typeof window !== "undefined") {
+  window.PaperMatrixWeb = { readSavedSettings, saveSettings, restoreSettings, settingsStorageKey };
+}
+
+if (typeof document !== "undefined") {
+  bindUi();
+  bootstrap();
+}
