@@ -2,41 +2,46 @@
 
 Language: [中文](README.md) | English
 
-PaperMatrix is a lightweight Python CLI for turning local PDFs, arXiv papers, or direct PDF URLs into a comparison matrix. It reads PDFs, cleans and chunks paper text, selects extraction-relevant chunks, asks an LLM for structured fields, and exports Markdown, CSV, and evidence files.
+PaperMatrix is a lightweight Python CLI for turning local PDFs, arXiv papers, or direct PDF URLs into a comparison matrix. It reads PDFs, cleans and chunks paper text, selects extraction-relevant chunks, asks an LLM for structured fields, and exports Markdown, CSV, and evidence files. It supports Windows, macOS, and Linux and requires Python 3.11 or newer.
 
 ## Install
 
-Create a virtual environment in the project directory:
+A virtual environment is tied to its operating system and cannot be copied between Windows and macOS/Linux. Create `.venv` on the system where you will run PaperMatrix.
 
-```bash
-python -m venv .venv
+Windows PowerShell:
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -e ".[web]"
 ```
 
-Activate it and install the project:
+macOS/Linux:
 
 ```bash
-.venv\Scripts\activate
-pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[web]"
 ```
 
-Install the optional Web dependencies to use the local Web UI:
+If you only need the CLI, omit the optional Web dependencies:
 
 ```bash
-pip install -e ".[web]"
+python -m pip install -e .
 ```
 
 ## API Key
 
-Set `OPENAI_API_KEY` before running:
-
-```bash
-set OPENAI_API_KEY=your_api_key_here
-```
-
-PowerShell:
+Windows PowerShell:
 
 ```powershell
 $env:OPENAI_API_KEY="your_api_key_here"
+```
+
+macOS/Linux:
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
 ```
 
 For an OpenAI-compatible relay or proxy API, also set the base URL and API mode:
@@ -48,6 +53,8 @@ $env:OPENAI_API_MODE="responses"
 $env:PAPERMATRIX_MODEL="gpt-5.5"
 $env:PAPERMATRIX_REASONING_EFFORT="medium"
 ```
+
+On macOS/Linux, use the same variable names and replace PowerShell's `$env:NAME="value"` syntax with `export NAME="value"`.
 
 You can also pass them per run:
 
@@ -63,7 +70,7 @@ Reasoning effort accepts `auto`, `low`, `medium`, or `high`. `auto` leaves the s
 
 Start the browser workspace:
 
-```powershell
+```bash
 papermatrix web
 ```
 
@@ -71,7 +78,7 @@ The service listens only on `http://127.0.0.1:8765` by default. The page accepts
 
 To avoid opening the system browser or to use a different port:
 
-```powershell
+```bash
 papermatrix web --no-open --port 9000
 ```
 
@@ -258,9 +265,17 @@ papermatrix ./papers --out matrix.md --force
 
 The default test suite is fully offline. Real-service checks are opt-in:
 
+Windows PowerShell:
+
 ```powershell
 $env:PAPERMATRIX_RUN_INTEGRATION="1"
 python -m pytest -m integration
+```
+
+macOS/Linux:
+
+```bash
+PAPERMATRIX_RUN_INTEGRATION=1 python -m pytest -m integration
 ```
 
 The arXiv download check runs with that flag. The tiny LLM check additionally requires `PAPERMATRIX_RUN_LLM_INTEGRATION=1` and `OPENAI_API_KEY`.

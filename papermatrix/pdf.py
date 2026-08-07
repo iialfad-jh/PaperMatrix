@@ -4,7 +4,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-import fitz
+import pymupdf as fitz
 
 
 TABLE_CELL_MAX_CHARS = 500

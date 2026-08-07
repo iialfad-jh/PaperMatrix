@@ -2,41 +2,46 @@
 
 语言：中文 | [English](README.en.md)
 
-PaperMatrix 是一个轻量级 Python 命令行工具，用于把本地 PDF、arXiv 论文或直接 PDF 链接转换成论文对比矩阵。它会读取 PDF、清洗并切块文本、选择和抽取最相关的片段、调用 LLM 生成结构化字段，最后导出 Markdown、CSV 和证据文件。
+PaperMatrix 是一个轻量级 Python 命令行工具，用于把本地 PDF、arXiv 论文或直接 PDF 链接转换成论文对比矩阵。它会读取 PDF、清洗并切块文本、选择和抽取最相关的片段、调用 LLM 生成结构化字段，最后导出 Markdown、CSV 和证据文件。支持 Windows、macOS 和 Linux，需要 Python 3.11 或更高版本。
 
 ## 安装
 
-在项目目录创建虚拟环境：
+虚拟环境与操作系统绑定，不能在 Windows 和 macOS/Linux 之间复制复用。请在当前系统上重新创建 `.venv`。
 
-```bash
-python -m venv .venv
+Windows PowerShell：
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -e ".[web]"
 ```
 
-激活虚拟环境并安装项目：
+macOS/Linux：
 
 ```bash
-.venv\Scripts\activate
-pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[web]"
 ```
 
-如需使用本地 Web UI，请安装 Web 可选依赖：
+只使用命令行时，可以省略 Web 可选依赖：
 
 ```bash
-pip install -e ".[web]"
+python -m pip install -e .
 ```
 
 ## API Key
 
-运行前设置 `OPENAI_API_KEY`：
-
-```bash
-set OPENAI_API_KEY=your_api_key_here
-```
-
-PowerShell：
+Windows PowerShell：
 
 ```powershell
 $env:OPENAI_API_KEY="your_api_key_here"
+```
+
+macOS/Linux：
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
 ```
 
 如果使用 OpenAI 兼容中转站，还需要设置接口地址和 API 模式：
@@ -48,6 +53,8 @@ $env:OPENAI_API_MODE="responses"
 $env:PAPERMATRIX_MODEL="gpt-5.5"
 $env:PAPERMATRIX_REASONING_EFFORT="medium"
 ```
+
+macOS/Linux 使用相同变量名，并将 PowerShell 的 `$env:NAME="value"` 写法改为 `export NAME="value"`。
 
 也可以在单次运行时传入：
 
@@ -63,7 +70,7 @@ papermatrix ./papers --out matrix.md --model gpt-5.5 --base-url https://api.dwai
 
 启动浏览器工作台：
 
-```powershell
+```bash
 papermatrix web
 ```
 
@@ -71,7 +78,7 @@ papermatrix web
 
 如果不希望自动打开系统浏览器，或需要修改端口：
 
-```powershell
+```bash
 papermatrix web --no-open --port 9000
 ```
 
@@ -258,9 +265,17 @@ papermatrix ./papers --out matrix.md --force
 
 默认测试套件完全离线。真实服务测试需要显式开启：
 
+Windows PowerShell：
+
 ```powershell
 $env:PAPERMATRIX_RUN_INTEGRATION="1"
 python -m pytest -m integration
+```
+
+macOS/Linux：
+
+```bash
+PAPERMATRIX_RUN_INTEGRATION=1 python -m pytest -m integration
 ```
 
 设置该变量后会执行 arXiv 下载检查；如需执行极小的真实 LLM 检查，还要设置 `PAPERMATRIX_RUN_LLM_INTEGRATION=1` 和 `OPENAI_API_KEY`。
