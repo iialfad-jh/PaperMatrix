@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from click import unstyle
 from typer.testing import CliRunner
 
 from papermatrix import cli
@@ -11,6 +12,10 @@ from papermatrix.schema import Evidence, ExtractedField, PaperExtract, field_spe
 
 
 runner = CliRunner()
+
+
+def normalized_cli_output(result) -> str:
+    return " ".join(unstyle(result.output).replace("│", " ").split())
 
 
 def make_extract(title: str, problem: str, paper_id: str = "paper") -> PaperExtract:
@@ -363,7 +368,7 @@ def test_cli_rejects_fields_with_preset():
     result = runner.invoke(cli.app, ["--fields", "problem,result", "--preset", "general"])
 
     assert result.exit_code != 0
-    assert "--fields and --preset cannot be used together" in result.output
+    assert "--fields and --preset cannot be used together" in normalized_cli_output(result)
 
 
 def test_cli_uses_preset_fields_and_records_preset_in_cache(tmp_path: Path, monkeypatch):
@@ -452,7 +457,7 @@ def test_cli_rejects_source_with_sources_file(tmp_path: Path):
     result = runner.invoke(cli.app, ["arxiv:2401.12345", "--sources-file", str(sources_file)])
 
     assert result.exit_code != 0
-    assert "SOURCE and --sources-file cannot be used together" in result.output
+    assert "SOURCE and --sources-file cannot be used together" in normalized_cli_output(result)
 
 
 def test_cli_fail_fast_writes_report_and_stops_before_processing(tmp_path: Path, monkeypatch):
