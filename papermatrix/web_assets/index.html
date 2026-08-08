@@ -148,14 +148,21 @@
               <button id="retry-job" class="secondary hidden" type="button" data-testid="retry-job">重试失败项</button>
             </div>
 
-            <section id="results" class="results hidden" aria-labelledby="result-title">
-              <div class="result-heading"><div><span class="step">03</span><h2 id="result-title">结果预览</h2></div><div id="downloads" class="downloads"></div></div>
-              <div id="matrix-preview" class="matrix-preview"></div>
-              <details class="evidence"><summary>查看证据摘录</summary><pre id="evidence-preview"></pre></details>
-            </section>
           </div>
         </section>
       </div>
+
+      <section id="results" class="panel results hidden" aria-labelledby="result-title">
+        <div class="result-heading">
+          <div><span class="step">03</span><h2 id="result-title">字段比较</h2></div>
+          <div class="result-tools">
+            <p id="result-summary" class="result-summary"></p>
+            <div id="downloads" class="downloads"></div>
+          </div>
+        </div>
+        <div id="matrix-preview" class="matrix-preview"></div>
+        <details class="evidence"><summary>查看证据摘录</summary><pre id="evidence-preview"></pre></details>
+      </section>
 
       <section class="recent" aria-labelledby="recent-title">
         <div class="recent-heading"><div><span class="step">↺</span><h2 id="recent-title">本次会话</h2></div><p>点击任务可重新查看状态与结果</p></div>

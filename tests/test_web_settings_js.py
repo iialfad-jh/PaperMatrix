@@ -103,7 +103,7 @@ def run_settings_script(tmp_path: Path, scenario: str) -> None:
             [
               "#settings-status", "#files", "#file-note", "#custom-fields-wrap", "#reasoning-hint",
               "#test-provider", "#cancel-job", "#retry-job", "#recent-jobs", "#form-error",
-              "#provider-probe-status", "[data-testid='health']"
+              "#provider-probe-status", "#matrix-preview", "#result-summary", "[data-testid='health']"
             ].forEach((selector) => element(selector));
 
             const storage = {
@@ -238,5 +238,23 @@ def test_web_settings_save_handles_storage_failures_and_key_opt_in(tmp_path: Pat
         assert.equal(saved.remember_api_key, false);
         assert.equal(Object.hasOwn(saved, "api_key"), false);
         assert.equal(element("#settings-status").className, "hint settings-status hidden");
+        """,
+    )
+
+
+def test_matrix_preview_renders_field_comparison_safely(tmp_path: Path):
+    run_settings_script(
+        tmp_path,
+        """
+        PaperMatrixWeb.renderMatrixPreview({
+          columns: ["Paper", "Method", "Result"],
+          rows: [{ Paper: "Study <One>", Method: "Trial", Result: "A & B" }]
+        });
+
+        const markup = element("#matrix-preview").innerHTML;
+        assert.match(markup, /<th scope="row">Study &lt;One&gt;<\\/th>/);
+        assert.match(markup, /data-field="Method">Trial<\\/td>/);
+        assert.match(markup, /A &amp; B/);
+        assert.equal(element("#result-summary").textContent, "1 篇论文 · 2 个比较字段");
         """,
     )

@@ -153,18 +153,25 @@ summary { padding: 14px 2px; color: var(--muted); font-size: 12px; font-weight: 
 .notice.error details summary { padding: 0; cursor: pointer; font-size: 11px; font-weight: 700; }
 .notice.error details code { display: block; margin-top: 5px; overflow-wrap: anywhere; color: #6c4945; font-size: 10px; }
 
-.results { margin-top: 30px; }
-.result-heading { padding-top: 25px; }
+.results { margin-top: 22px; padding: 30px; }
+.result-tools { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.result-summary { margin: 0; color: var(--muted); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .downloads { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .downloads a { padding: 7px 9px; border: 1px solid var(--line); color: var(--ink); text-decoration: none; font-size: 11px; font-weight: 700; background: #fff; }
 .downloads a:hover { color: var(--teal); border-color: var(--teal); }
-.matrix-preview { margin-top: 18px; overflow: auto; border: 1px solid var(--line); }
-.matrix-preview table { width: 100%; border-collapse: collapse; min-width: 1120px; background: #fff; font-size: 12px; }
-.matrix-preview th { position: sticky; top: 0; padding: 10px; text-align: left; color: #fff; background: var(--ink); }
-.matrix-preview th, .matrix-preview td { min-width: 145px; }
-.matrix-preview th:first-child, .matrix-preview td:first-child { min-width: 210px; }
-.matrix-preview td { max-width: 300px; padding: 10px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.55; }
-.matrix-preview tr:nth-child(even) td { background: #faf8f2; }
+.matrix-preview { max-height: min(68vh, 720px); margin-top: 18px; overflow: auto; border: 1px solid var(--line); scrollbar-gutter: stable; background: #fff; }
+.matrix-preview table { width: 100%; min-width: 100%; border-collapse: separate; border-spacing: 0; table-layout: auto; background: #fff; font-size: 12px; }
+.matrix-preview thead th { position: sticky; top: 0; z-index: 3; height: 58px; padding: 9px 14px; text-align: left; color: #fff; background: var(--ink); border-right: 1px solid #3a4c50; border-bottom: 1px solid #3a4c50; }
+.matrix-preview thead th:not(:first-child), .matrix-preview td { min-width: 190px; }
+.matrix-preview thead th:first-child, .matrix-preview tbody th { position: sticky; left: 0; min-width: 260px; max-width: 320px; }
+.matrix-preview thead th:first-child { z-index: 4; }
+.matrix-preview .column-number { display: block; margin-bottom: 4px; color: #8fc5be; font: 700 9px/1 ui-monospace, monospace; }
+.matrix-preview thead strong { display: block; font-size: 12px; line-height: 1.35; }
+.matrix-preview tbody th, .matrix-preview td { padding: 14px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; line-height: 1.65; overflow-wrap: anywhere; }
+.matrix-preview tbody th { z-index: 2; color: var(--ink); background: #f1eee6; font-size: 12px; font-weight: 800; }
+.matrix-preview tbody tr:nth-child(even) th { background: #e8e4da; }
+.matrix-preview tbody tr:nth-child(even) td { background: #faf8f2; }
+.matrix-preview tbody tr:hover th, .matrix-preview tbody tr:hover td { background: var(--teal-soft); }
 .evidence { margin-top: 14px; }
 .evidence pre { max-height: 300px; overflow: auto; margin: 0 0 15px; padding: 14px; white-space: pre-wrap; color: #33494d; background: #f0eee8; font: 11px/1.65 ui-monospace, monospace; }
 
@@ -194,8 +201,13 @@ footer { height: 70px; display: flex; justify-content: space-between; align-item
   .brand small, .health { display: none; }
   h1 { font-size: 40px; }
   .hero { min-height: 0; }
-  .composer, .monitor { padding: 20px; }
+  .composer, .monitor, .results { padding: 20px; }
   .field-grid, .field-grid.three { grid-template-columns: 1fr; gap: 0; }
   .recent-jobs { grid-template-columns: 1fr; }
   .panel-heading p, .recent-heading p { display: none; }
+  .result-heading { align-items: flex-start; }
+  .result-tools { align-items: flex-end; flex-direction: column; gap: 8px; }
+  .matrix-preview { max-height: 72vh; }
+  .matrix-preview thead th:not(:first-child), .matrix-preview td { min-width: 175px; }
+  .matrix-preview thead th:first-child, .matrix-preview tbody th { min-width: 180px; max-width: 210px; }
 }

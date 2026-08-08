@@ -290,14 +290,33 @@ async function loadPreview(jobId) {
   try {
     const preview = await api(`/api/jobs/${jobId}/preview`);
     if (jobId !== state.currentJobId) return;
-    const head = preview.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
-    const rows = preview.rows.map((row) => `<tr>${preview.columns.map((column) => `<td>${escapeHtml(row[column])}</td>`).join("")}</tr>`).join("");
-    $("#matrix-preview").innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+    renderMatrixPreview(preview);
     $("#evidence-preview").textContent = preview.evidence || "暂无证据文件。";
     $("#results").classList.remove("hidden");
   } catch (error) {
     showError($("#job-error"), error.message);
   }
+}
+
+function renderMatrixPreview(preview) {
+  const columns = Array.isArray(preview?.columns) ? preview.columns : [];
+  const rows = Array.isArray(preview?.rows) ? preview.rows : [];
+  const fieldCount = Math.max(0, columns.length - 1);
+  $("#result-summary").textContent = `${rows.length} 篇论文 · ${fieldCount} 个比较字段`;
+  if (!columns.length) {
+    $("#matrix-preview").innerHTML = '<p class="muted matrix-empty">暂无可预览字段。</p>';
+    return;
+  }
+  const head = columns.map((column, index) => (
+    `<th scope="col"><span class="column-number">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(column)}</strong></th>`
+  )).join("");
+  const body = rows.map((row) => `<tr>${columns.map((column, index) => {
+    const value = escapeHtml(row?.[column]);
+    return index === 0
+      ? `<th scope="row">${value}</th>`
+      : `<td data-field="${escapeHtml(column)}">${value}</td>`;
+  }).join("")}</tr>`).join("");
+  $("#matrix-preview").innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 function connectEvents(jobId) {
@@ -434,7 +453,7 @@ function bindUi() {
 }
 
 if (typeof window !== "undefined") {
-  window.PaperMatrixWeb = { readSavedSettings, saveSettings, restoreSettings, settingsStorageKey };
+  window.PaperMatrixWeb = { readSavedSettings, saveSettings, restoreSettings, renderMatrixPreview, settingsStorageKey };
 }
 
 if (typeof document !== "undefined") {
