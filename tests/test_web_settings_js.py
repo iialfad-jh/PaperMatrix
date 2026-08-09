@@ -103,7 +103,8 @@ def run_settings_script(tmp_path: Path, scenario: str) -> None:
             [
               "#settings-status", "#files", "#file-note", "#custom-fields-wrap", "#reasoning-hint",
               "#test-provider", "#cancel-job", "#retry-job", "#recent-jobs", "#form-error",
-              "#provider-probe-status", "#matrix-preview", "#result-summary", "[data-testid='health']"
+              "#provider-probe-status", "#matrix-preview", "#result-summary", "#field-visibility",
+              "#field-toggles", "#show-all-fields", "[data-testid='health']"
             ].forEach((selector) => element(selector));
 
             const storage = {
@@ -246,7 +247,7 @@ def test_matrix_preview_renders_field_comparison_safely(tmp_path: Path):
     run_settings_script(
         tmp_path,
         """
-        PaperMatrixWeb.renderMatrixPreview({
+        PaperMatrixWeb.setMatrixPreview({
           columns: ["Paper", "Method", "Result"],
           rows: [{ Paper: "Study <One>", Method: "Trial", Result: "A & B" }]
         });
@@ -255,6 +256,17 @@ def test_matrix_preview_renders_field_comparison_safely(tmp_path: Path):
         assert.match(markup, /<th scope="row">Study &lt;One&gt;<\\/th>/);
         assert.match(markup, /data-field="Method">Trial<\\/td>/);
         assert.match(markup, /A &amp; B/);
-        assert.equal(element("#result-summary").textContent, "1 篇论文 · 2 个比较字段");
+        assert.equal(element("#result-summary").textContent, "1 篇论文 · 2/2 个字段显示");
+
+        PaperMatrixWeb.setFieldVisibility(1, false);
+        const hiddenMarkup = element("#matrix-preview").innerHTML;
+        assert.doesNotMatch(hiddenMarkup, /Method/);
+        assert.match(hiddenMarkup, /Result/);
+        assert.match(hiddenMarkup, /<th scope="row">Study &lt;One&gt;<\\/th>/);
+        assert.equal(element("#result-summary").textContent, "1 篇论文 · 1/2 个字段显示");
+
+        PaperMatrixWeb.showAllFields();
+        assert.match(element("#matrix-preview").innerHTML, /Method/);
+        assert.equal(element("#show-all-fields").disabled, true);
         """,
     )

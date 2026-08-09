@@ -159,7 +159,17 @@ summary { padding: 14px 2px; color: var(--muted); font-size: 12px; font-weight: 
 .downloads { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .downloads a { padding: 7px 9px; border: 1px solid var(--line); color: var(--ink); text-decoration: none; font-size: 11px; font-weight: 700; background: #fff; }
 .downloads a:hover { color: var(--teal); border-color: var(--teal); }
-.matrix-preview { max-height: min(68vh, 720px); margin-top: 18px; overflow: auto; border: 1px solid var(--line); scrollbar-gutter: stable; background: #fff; }
+.field-visibility { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: start; margin-top: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.field-visibility-heading { min-width: 92px; display: grid; gap: 5px; }
+.field-visibility-heading strong { font-size: 11px; }
+.field-visibility-heading button { width: max-content; padding: 0; border: 0; color: var(--teal); background: transparent; font-size: 10px; font-weight: 750; }
+.field-visibility-heading button:hover { color: var(--accent-dark); }
+.field-visibility-heading button:disabled { color: var(--muted); cursor: default; opacity: .55; }
+.field-toggles { display: flex; flex-wrap: wrap; gap: 7px; }
+.field-toggle { min-height: 31px; display: inline-flex; align-items: center; gap: 7px; margin: 0; padding: 6px 9px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: rgba(255,255,255,.62); font-size: 11px; font-weight: 650; cursor: pointer; }
+.field-toggle:hover { border-color: var(--teal); }
+.field-toggle input { width: 14px; height: 14px; margin: 0; accent-color: var(--teal); }
+.matrix-preview { max-height: min(68vh, 720px); margin-top: 16px; overflow: auto; border: 1px solid var(--line); scrollbar-gutter: stable; background: #fff; }
 .matrix-preview table { width: 100%; min-width: 100%; border-collapse: separate; border-spacing: 0; table-layout: auto; background: #fff; font-size: 12px; }
 .matrix-preview thead th { position: sticky; top: 0; z-index: 3; height: 58px; padding: 9px 14px; text-align: left; color: #fff; background: var(--ink); border-right: 1px solid #3a4c50; border-bottom: 1px solid #3a4c50; }
 .matrix-preview thead th:not(:first-child), .matrix-preview td { min-width: 190px; }
@@ -207,6 +217,8 @@ footer { height: 70px; display: flex; justify-content: space-between; align-item
   .panel-heading p, .recent-heading p { display: none; }
   .result-heading { align-items: flex-start; }
   .result-tools { align-items: flex-end; flex-direction: column; gap: 8px; }
+  .field-visibility { grid-template-columns: 1fr; gap: 9px; }
+  .field-visibility-heading { min-width: 0; display: flex; justify-content: space-between; align-items: center; }
   .matrix-preview { max-height: 72vh; }
   .matrix-preview thead th:not(:first-child), .matrix-preview td { min-width: 175px; }
   .matrix-preview thead th:first-child, .matrix-preview tbody th { min-width: 180px; max-width: 210px; }

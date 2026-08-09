@@ -1,4 +1,13 @@
-const state = { currentJobId: null, currentJob: null, previewJobId: null, eventSource: null, events: [], jobs: [] };
+const state = {
+  currentJobId: null,
+  currentJob: null,
+  previewJobId: null,
+  eventSource: null,
+  events: [],
+  jobs: [],
+  matrixPreview: null,
+  visibleColumnIndexes: new Set()
+};
 
 const $ = (selector) => document.querySelector(selector);
 const statusLabels = {
@@ -290,7 +299,7 @@ async function loadPreview(jobId) {
   try {
     const preview = await api(`/api/jobs/${jobId}/preview`);
     if (jobId !== state.currentJobId) return;
-    renderMatrixPreview(preview);
+    setMatrixPreview(preview);
     $("#evidence-preview").textContent = preview.evidence || "暂无证据文件。";
     $("#results").classList.remove("hidden");
   } catch (error) {
@@ -298,19 +307,60 @@ async function loadPreview(jobId) {
   }
 }
 
-function renderMatrixPreview(preview) {
+function setMatrixPreview(preview) {
   const columns = Array.isArray(preview?.columns) ? preview.columns : [];
   const rows = Array.isArray(preview?.rows) ? preview.rows : [];
+  state.matrixPreview = { columns, rows };
+  state.visibleColumnIndexes = new Set(columns.map((_, index) => index));
+  renderFieldToggles();
+  renderMatrixPreview();
+}
+
+function setFieldVisibility(columnIndex, visible) {
+  const columns = state.matrixPreview?.columns || [];
+  if (!Number.isInteger(columnIndex) || columnIndex <= 0 || columnIndex >= columns.length) return;
+  if (visible) state.visibleColumnIndexes.add(columnIndex);
+  else state.visibleColumnIndexes.delete(columnIndex);
+  renderFieldToggles();
+  renderMatrixPreview();
+}
+
+function showAllFields() {
+  const columns = state.matrixPreview?.columns || [];
+  state.visibleColumnIndexes = new Set(columns.map((_, index) => index));
+  renderFieldToggles();
+  renderMatrixPreview();
+}
+
+function renderFieldToggles() {
+  const columns = state.matrixPreview?.columns || [];
+  const fields = columns.slice(1);
+  $("#field-visibility").classList.toggle("hidden", !fields.length);
+  $("#field-toggles").innerHTML = fields.map((field, offset) => {
+    const columnIndex = offset + 1;
+    const checked = state.visibleColumnIndexes.has(columnIndex) ? " checked" : "";
+    return `<label class="field-toggle"><input type="checkbox" data-column-index="${columnIndex}"${checked}><span>${escapeHtml(field)}</span></label>`;
+  }).join("");
+  $("#show-all-fields").disabled = fields.every((_, offset) => state.visibleColumnIndexes.has(offset + 1));
+}
+
+function renderMatrixPreview() {
+  const columns = state.matrixPreview?.columns || [];
+  const rows = state.matrixPreview?.rows || [];
+  const visibleColumns = columns
+    .map((column, index) => ({ column, index }))
+    .filter(({ index }) => index === 0 || state.visibleColumnIndexes.has(index));
   const fieldCount = Math.max(0, columns.length - 1);
-  $("#result-summary").textContent = `${rows.length} 篇论文 · ${fieldCount} 个比较字段`;
+  const visibleFieldCount = Math.max(0, visibleColumns.length - 1);
+  $("#result-summary").textContent = `${rows.length} 篇论文 · ${visibleFieldCount}/${fieldCount} 个字段显示`;
   if (!columns.length) {
     $("#matrix-preview").innerHTML = '<p class="muted matrix-empty">暂无可预览字段。</p>';
     return;
   }
-  const head = columns.map((column, index) => (
+  const head = visibleColumns.map(({ column, index }) => (
     `<th scope="col"><span class="column-number">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(column)}</strong></th>`
   )).join("");
-  const body = rows.map((row) => `<tr>${columns.map((column, index) => {
+  const body = rows.map((row) => `<tr>${visibleColumns.map(({ column, index }) => {
     const value = escapeHtml(row?.[column]);
     return index === 0
       ? `<th scope="row">${value}</th>`
@@ -446,6 +496,11 @@ function bindUi() {
   $("#test-provider").addEventListener("click", testProvider);
   $("#cancel-job").addEventListener("click", cancelCurrent);
   $("#retry-job").addEventListener("click", retryCurrent);
+  $("#show-all-fields").addEventListener("click", showAllFields);
+  $("#field-toggles").addEventListener("change", (event) => {
+    const input = event.target.closest("input[data-column-index]");
+    if (input) setFieldVisibility(Number(input.dataset.columnIndex), input.checked);
+  });
   $("#recent-jobs").addEventListener("click", (event) => {
     const button = event.target.closest("[data-job-id]");
     if (button) selectJob(button.dataset.jobId);
@@ -453,7 +508,15 @@ function bindUi() {
 }
 
 if (typeof window !== "undefined") {
-  window.PaperMatrixWeb = { readSavedSettings, saveSettings, restoreSettings, renderMatrixPreview, settingsStorageKey };
+  window.PaperMatrixWeb = {
+    readSavedSettings,
+    saveSettings,
+    restoreSettings,
+    setMatrixPreview,
+    setFieldVisibility,
+    showAllFields,
+    settingsStorageKey
+  };
 }
 
 if (typeof document !== "undefined") {
