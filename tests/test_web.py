@@ -119,10 +119,12 @@ def test_web_job_upload_streams_progress_and_previews_results(tmp_path: Path):
         assert preview.status_code == 200
         assert preview.json()["columns"] == ["Paper", "Problem"]
         assert preview.json()["rows"][0]["Paper"] == "Example Paper"
+        assert preview.json()["field_names"] == ["problem", "method", "dataset", "metric", "result", "limitation"]
         assert "Page 1" in preview.json()["evidence"]
 
         report = json.loads(manager.get(job_id).run_report_path.read_text(encoding="utf-8"))
         paper_id = report["items"][0]["paper_id"]
+        assert preview.json()["paper_ids"] == [paper_id]
         evidence = client.get(f"/api/jobs/{job_id}/papers/{paper_id}/fields/problem/evidence")
         assert evidence.status_code == 200
         assert evidence.json()["title"] == "Example Paper"
@@ -438,6 +440,9 @@ def test_web_ui_exposes_browser_local_settings_persistence(tmp_path: Path):
     assert "job.error_detail || job.error" in script.text
     assert 'action.className = "error-action"' in script.text
     assert 'summary.textContent = "技术详情"' in script.text
+    assert 'src="/assets/pdf-viewer.js"' in page.text
+    assert client.get("/assets/pdf-viewer.js").status_code == 200
+    assert client.get("/assets/pdfjs/pdf.min.mjs").status_code == 200
 
 
 def test_web_reuses_the_same_content_addressed_upload(tmp_path: Path):

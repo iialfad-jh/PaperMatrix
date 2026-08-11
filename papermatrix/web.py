@@ -662,7 +662,37 @@ def _read_preview(job: WebJob) -> dict[str, Any]:
         rows = [dict(row) for row in reader]
     evidence_path = job.artifacts.get("evidence")
     evidence = evidence_path.read_text(encoding="utf-8") if evidence_path and evidence_path.is_file() else ""
-    return {"columns": columns, "rows": rows, "evidence": evidence}
+    report = _load_job_report(job)
+    field_specs = _job_field_specs(report)
+    work_dir = _job_work_dir(report)
+    field_names = [field_spec.name for field_spec in field_specs]
+    available_papers: list[tuple[str, str]] = []
+    for item in report.get("items", []):
+        if not isinstance(item, dict) or not item.get("paper_id"):
+            continue
+        paper_id = str(item["paper_id"])
+        try:
+            extract = load_extract_json(work_dir / f"{paper_id}_extract.json", paper_id, field_names=field_names)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        available_papers.append((paper_id, extract.title or paper_id))
+
+    paper_ids: list[str | None] = []
+    for row in rows:
+        title = str(row.get(columns[0]) or "") if columns else ""
+        matching_index = next((index for index, (_, candidate_title) in enumerate(available_papers) if candidate_title == title), None)
+        if matching_index is None:
+            paper_ids.append(None)
+            continue
+        paper_id, _title = available_papers.pop(matching_index)
+        paper_ids.append(paper_id)
+    return {
+        "columns": columns,
+        "rows": rows,
+        "paper_ids": paper_ids,
+        "field_names": field_names,
+        "evidence": evidence,
+    }
 
 
 def _load_job_report(job: WebJob) -> dict[str, Any]:

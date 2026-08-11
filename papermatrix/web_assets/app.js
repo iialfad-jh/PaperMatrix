@@ -6,7 +6,11 @@ const state = {
   events: [],
   jobs: [],
   matrixPreview: null,
-  visibleColumnIndexes: new Set()
+  visibleColumnIndexes: new Set(),
+  evidence: null,
+  evidenceIndex: 0,
+  pdfPage: 1,
+  evidenceRequest: 0
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -262,6 +266,7 @@ function updateJob(job) {
   if (state.currentJobId !== job.id) {
     state.previewJobId = null;
     $("#results").classList.add("hidden");
+    closeEvidenceInspector();
   }
   state.currentJobId = job.id;
   state.currentJob = job;
@@ -310,7 +315,9 @@ async function loadPreview(jobId) {
 function setMatrixPreview(preview) {
   const columns = Array.isArray(preview?.columns) ? preview.columns : [];
   const rows = Array.isArray(preview?.rows) ? preview.rows : [];
-  state.matrixPreview = { columns, rows };
+  const paperIds = Array.isArray(preview?.paper_ids) ? preview.paper_ids : [];
+  const fieldNames = Array.isArray(preview?.field_names) ? preview.field_names : [];
+  state.matrixPreview = { columns, rows, paperIds, fieldNames };
   state.visibleColumnIndexes = new Set(columns.map((_, index) => index));
   renderFieldToggles();
   renderMatrixPreview();
@@ -347,6 +354,8 @@ function renderFieldToggles() {
 function renderMatrixPreview() {
   const columns = state.matrixPreview?.columns || [];
   const rows = state.matrixPreview?.rows || [];
+  const paperIds = state.matrixPreview?.paperIds || [];
+  const fieldNames = state.matrixPreview?.fieldNames || [];
   const visibleColumns = columns
     .map((column, index) => ({ column, index }))
     .filter(({ index }) => index === 0 || state.visibleColumnIndexes.has(index));
@@ -360,13 +369,129 @@ function renderMatrixPreview() {
   const head = visibleColumns.map(({ column, index }) => (
     `<th scope="col"><span class="column-number">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(column)}</strong></th>`
   )).join("");
-  const body = rows.map((row) => `<tr>${visibleColumns.map(({ column, index }) => {
+  const body = rows.map((row, rowIndex) => `<tr>${visibleColumns.map(({ column, index }) => {
     const value = escapeHtml(row?.[column]);
     return index === 0
       ? `<th scope="row">${value}</th>`
-      : `<td data-field="${escapeHtml(column)}">${value}</td>`;
+      : renderMatrixFieldCell({
+        value,
+        fieldLabel: column,
+        fieldName: fieldNames[index - 1],
+        paperId: paperIds[rowIndex]
+      });
   }).join("")}</tr>`).join("");
   $("#matrix-preview").innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function renderMatrixFieldCell({ value, fieldLabel, fieldName, paperId }) {
+  const hasValue = value && value !== "unknown" && value !== "未知";
+  if (!hasValue || !paperId || !fieldName) return `<td data-field="${escapeHtml(fieldLabel)}">${value}</td>`;
+  return `<td data-field="${escapeHtml(fieldLabel)}"><button class="matrix-evidence-cell" type="button" data-paper-id="${escapeHtml(paperId)}" data-field-name="${escapeHtml(fieldName)}" title="查看证据">${value}</button></td>`;
+}
+
+function evidencePage(evidence) {
+  const pages = Array.isArray(evidence?.pages) ? evidence.pages : [];
+  return Number(pages[0]) || 1;
+}
+
+function closeEvidenceInspector() {
+  state.evidenceRequest += 1;
+  state.evidence = null;
+  $("#evidence-inspector").classList.add("hidden");
+  window.PaperMatrixPdfViewer?.clearPdfViewer();
+}
+
+function renderEvidenceSources() {
+  const list = $("#evidence-source-list");
+  list.replaceChildren();
+  const evidence = state.evidence?.field?.evidence || [];
+  evidence.forEach((source, index) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.evidenceIndex = String(index);
+    button.className = index === state.evidenceIndex ? "selected" : "";
+    const pages = (source.pages || []).join("、") || "—";
+    button.textContent = `证据 ${index + 1} · 第 ${pages} 页`;
+    const excerpt = document.createElement("p");
+    excerpt.textContent = String(source.text || "").replace(/\s+/g, " ").slice(0, 180) || "无可显示的原文摘录。";
+    item.append(button, excerpt);
+    list.append(item);
+  });
+}
+
+async function renderEvidencePdf(page = evidencePage(state.evidence?.field?.evidence?.[state.evidenceIndex])) {
+  const source = state.evidence?.field?.evidence?.[state.evidenceIndex];
+  const viewer = $("#pdf-viewer");
+  const status = $("#evidence-match-status");
+  if (!source) {
+    viewer.textContent = "当前字段没有可用的原文证据。";
+    status.textContent = "没有可定位的证据页。";
+    $("#pdf-page-label").textContent = "—";
+    return;
+  }
+  if (!window.PaperMatrixPdfViewer) {
+    viewer.textContent = "PDF 查看器未能加载，请使用“打开 PDF”查看原文。";
+    status.textContent = "无法在此页面中高亮。";
+    return;
+  }
+  try {
+    const result = await window.PaperMatrixPdfViewer.renderEvidencePage({
+      container: viewer,
+      url: state.evidence.pdf_url,
+      pageNumber: page,
+      evidenceText: source.text
+    });
+    if (!result || !state.evidence) return;
+    state.pdfPage = result.pageNumber;
+    $("#pdf-page-label").textContent = `${result.pageNumber} / ${result.pageCount}`;
+    $("#pdf-previous-page").disabled = result.pageNumber <= 1;
+    $("#pdf-next-page").disabled = result.pageNumber >= result.pageCount;
+    status.textContent = result.matchCount
+      ? `已在此页标记 ${result.matchCount} 处匹配文本。`
+      : "已定位到证据页，但未能自动匹配原文。";
+  } catch (error) {
+    viewer.textContent = "无法渲染此 PDF 页面，请使用“打开 PDF”查看原文。";
+    status.textContent = error.message || "PDF 渲染失败。";
+    $("#pdf-page-label").textContent = "—";
+  }
+}
+
+async function openFieldEvidence(paperId, fieldName) {
+  if (!state.currentJobId || !paperId || !fieldName) return;
+  const request = ++state.evidenceRequest;
+  const inspector = $("#evidence-inspector");
+  inspector.classList.remove("hidden");
+  $("#evidence-inspector-meta").textContent = "正在加载字段证据…";
+  $("#evidence-field-value").textContent = "";
+  $("#evidence-match-status").textContent = "";
+  $("#evidence-source-list").replaceChildren();
+  $("#pdf-viewer").textContent = "正在准备 PDF…";
+  try {
+    const evidence = await api(`/api/jobs/${state.currentJobId}/papers/${encodeURIComponent(paperId)}/fields/${encodeURIComponent(fieldName)}/evidence`);
+    if (request !== state.evidenceRequest) return;
+    state.evidence = evidence;
+    state.evidenceIndex = 0;
+    state.pdfPage = evidencePage(evidence.field?.evidence?.[0]);
+    $("#evidence-inspector-title").textContent = evidence.field?.label || fieldName;
+    $("#evidence-inspector-meta").textContent = evidence.title || paperId;
+    $("#evidence-field-value").textContent = evidence.field?.value || "未知";
+    $("#pdf-open-link").href = evidence.pdf_url;
+    renderEvidenceSources();
+    await renderEvidencePdf();
+  } catch (error) {
+    if (request !== state.evidenceRequest) return;
+    $("#evidence-inspector-meta").textContent = "无法加载字段证据。";
+    $("#pdf-viewer").textContent = error.message || "请求失败。";
+  }
+}
+
+function selectEvidenceSource(index) {
+  if (!state.evidence?.field?.evidence?.[index]) return;
+  state.evidenceIndex = index;
+  state.pdfPage = evidencePage(state.evidence.field.evidence[index]);
+  renderEvidenceSources();
+  renderEvidencePdf();
 }
 
 function connectEvents(jobId) {
@@ -497,6 +622,17 @@ function bindUi() {
   $("#cancel-job").addEventListener("click", cancelCurrent);
   $("#retry-job").addEventListener("click", retryCurrent);
   $("#show-all-fields").addEventListener("click", showAllFields);
+  $("#matrix-preview").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-paper-id][data-field-name]");
+    if (button) openFieldEvidence(button.dataset.paperId, button.dataset.fieldName);
+  });
+  $("#close-evidence-inspector").addEventListener("click", closeEvidenceInspector);
+  $("#evidence-source-list").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-evidence-index]");
+    if (button) selectEvidenceSource(Number(button.dataset.evidenceIndex));
+  });
+  $("#pdf-previous-page").addEventListener("click", () => renderEvidencePdf(state.pdfPage - 1));
+  $("#pdf-next-page").addEventListener("click", () => renderEvidencePdf(state.pdfPage + 1));
   $("#field-toggles").addEventListener("change", (event) => {
     const input = event.target.closest("input[data-column-index]");
     if (input) setFieldVisibility(Number(input.dataset.columnIndex), input.checked);
@@ -515,6 +651,8 @@ if (typeof window !== "undefined") {
     setMatrixPreview,
     setFieldVisibility,
     showAllFields,
+    openFieldEvidence,
+    closeEvidenceInspector,
     settingsStorageKey
   };
 }

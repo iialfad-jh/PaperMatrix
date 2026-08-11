@@ -43,4 +43,4 @@ markers = [
 include = ["papermatrix*"]
 
 [tool.setuptools.package-data]
-papermatrix = ["presets/*.json", "web_assets/*"]
+papermatrix = ["presets/*.json", "web_assets/*", "web_assets/pdfjs/*"]

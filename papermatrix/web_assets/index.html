@@ -168,6 +168,32 @@
           <div id="field-toggles" class="field-toggles"></div>
         </div>
         <div id="matrix-preview" class="matrix-preview"></div>
+        <section id="evidence-inspector" class="evidence-inspector hidden" aria-labelledby="evidence-inspector-title">
+          <div class="evidence-inspector-heading">
+            <div>
+              <span class="step">证据</span>
+              <h3 id="evidence-inspector-title">核验字段</h3>
+              <p id="evidence-inspector-meta" class="muted"></p>
+            </div>
+            <button id="close-evidence-inspector" class="icon-button" type="button" aria-label="关闭证据检查器" title="关闭">&times;</button>
+          </div>
+          <div class="evidence-inspector-grid">
+            <aside class="evidence-sidebar" aria-label="字段证据">
+              <p id="evidence-field-value" class="evidence-field-value"></p>
+              <p id="evidence-match-status" class="hint"></p>
+              <ol id="evidence-source-list" class="evidence-source-list"></ol>
+            </aside>
+            <div class="pdf-pane">
+              <div class="pdf-toolbar">
+                <button id="pdf-previous-page" class="icon-button" type="button" aria-label="上一页" title="上一页">&larr;</button>
+                <span id="pdf-page-label" aria-live="polite">—</span>
+                <button id="pdf-next-page" class="icon-button" type="button" aria-label="下一页" title="下一页">&rarr;</button>
+                <a id="pdf-open-link" class="pdf-open-link" href="#" target="_blank" rel="noopener">打开 PDF</a>
+              </div>
+              <div id="pdf-viewer" class="pdf-viewer" aria-live="polite"></div>
+            </div>
+          </div>
+        </section>
         <details class="evidence"><summary>查看证据摘录</summary><pre id="evidence-preview"></pre></details>
       </section>
 
@@ -179,6 +205,7 @@
 
     <footer><span>PaperMatrix 0.1</span><span>Evidence before summary.</span></footer>
   </div>
+  <script type="module" src="/assets/pdf-viewer.js"></script>
   <script src="/assets/app.js" defer></script>
 </body>
 </html>
