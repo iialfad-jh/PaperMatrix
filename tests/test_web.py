@@ -8,8 +8,11 @@ from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from papermatrix import cli
+from papermatrix.chunk import save_chunks_jsonl
+from papermatrix.extract import save_extract_json
 from papermatrix.pipeline import PipelineResult, ProgressEvent
 from papermatrix.run_report import create_run_report, save_run_report
+from papermatrix.schema import Evidence, ExtractedField, PaperExtract
 from papermatrix.web import JobManager, _classify_service_error, create_app
 
 
@@ -42,6 +45,31 @@ def write_success_result(config, paper_plan, run_report_path: Path, progress_cal
     report["items"][0]["status"] = "exported"
     report["items"][0]["stages"].extend(["extracted", "exported"])
     save_run_report(report, run_report_path)
+    paper_id = paper_plan[0][1]
+    save_chunks_jsonl(
+        [
+            {
+                "chunk_id": f"{paper_id}_c0",
+                "paper_id": paper_id,
+                "pages": [1],
+                "text": "Example problem evidence from the first page.",
+            }
+        ],
+        config.work_dir / f"{paper_id}_chunks.jsonl",
+    )
+    save_extract_json(
+        PaperExtract(
+            paper_id=paper_id,
+            title="Example Paper",
+            fields={
+                "problem": ExtractedField(
+                    value="Example problem",
+                    evidence=[Evidence(chunk_id=f"{paper_id}_c0", pages=[1])],
+                )
+            },
+        ),
+        config.work_dir / f"{paper_id}_extract.json",
+    )
     return PipelineResult(True, False, [], report, run_report_path, config.out, csv_path, evidence_path)
 
 
@@ -92,6 +120,35 @@ def test_web_job_upload_streams_progress_and_previews_results(tmp_path: Path):
         assert preview.json()["columns"] == ["Paper", "Problem"]
         assert preview.json()["rows"][0]["Paper"] == "Example Paper"
         assert "Page 1" in preview.json()["evidence"]
+
+        report = json.loads(manager.get(job_id).run_report_path.read_text(encoding="utf-8"))
+        paper_id = report["items"][0]["paper_id"]
+        evidence = client.get(f"/api/jobs/{job_id}/papers/{paper_id}/fields/problem/evidence")
+        assert evidence.status_code == 200
+        assert evidence.json()["title"] == "Example Paper"
+        assert evidence.json()["pdf_url"] == f"/api/jobs/{job_id}/papers/{paper_id}/pdf"
+        assert evidence.json()["field"] == {
+            "name": "problem",
+            "label": "Problem",
+            "value": "Example problem",
+            "evidence": [
+                {
+                    "chunk_id": f"{paper_id}_c0",
+                    "pages": [1],
+                    "text": "Example problem evidence from the first page.",
+                    "kind": "text",
+                    "table": None,
+                }
+            ],
+        }
+
+        pdf = client.get(f"/api/jobs/{job_id}/papers/{paper_id}/pdf")
+        assert pdf.status_code == 200
+        assert pdf.headers["content-type"].startswith("application/pdf")
+        assert pdf.content == b"%PDF-1.4\n"
+
+        assert client.get(f"/api/jobs/{job_id}/papers/not-a-paper/pdf").status_code == 404
+        assert client.get(f"/api/jobs/{job_id}/papers/{paper_id}/fields/not_a_field/evidence").status_code == 404
 
         events = client.get(f"/api/jobs/{job_id}/events").text
         assert '"type":"progress"' in events
