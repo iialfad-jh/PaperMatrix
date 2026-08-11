@@ -34,7 +34,9 @@ from .pipeline import (
 )
 from .presets import list_presets, load_preset
 from .run_report import failed_items, load_run_report
-from .schema import FieldSpec, parse_field_specs
+from .chunk import load_chunks_jsonl
+from .extract import load_extract_json
+from .schema import FieldSpec, field_label, parse_field_specs
 
 
 ASSETS_DIR = Path(__file__).with_name("web_assets")
@@ -660,7 +662,129 @@ def _read_preview(job: WebJob) -> dict[str, Any]:
         rows = [dict(row) for row in reader]
     evidence_path = job.artifacts.get("evidence")
     evidence = evidence_path.read_text(encoding="utf-8") if evidence_path and evidence_path.is_file() else ""
-    return {"columns": columns, "rows": rows, "evidence": evidence}
+    report = _load_job_report(job)
+    field_specs = _job_field_specs(report)
+    work_dir = _job_work_dir(report)
+    field_names = [field_spec.name for field_spec in field_specs]
+    available_papers: list[tuple[str, str]] = []
+    for item in report.get("items", []):
+        if not isinstance(item, dict) or not item.get("paper_id"):
+            continue
+        paper_id = str(item["paper_id"])
+        try:
+            extract = load_extract_json(work_dir / f"{paper_id}_extract.json", paper_id, field_names=field_names)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        available_papers.append((paper_id, extract.title or paper_id))
+
+    paper_ids: list[str | None] = []
+    for row in rows:
+        title = str(row.get(columns[0]) or "") if columns else ""
+        matching_index = next((index for index, (_, candidate_title) in enumerate(available_papers) if candidate_title == title), None)
+        if matching_index is None:
+            paper_ids.append(None)
+            continue
+        paper_id, _title = available_papers.pop(matching_index)
+        paper_ids.append(paper_id)
+    return {
+        "columns": columns,
+        "rows": rows,
+        "paper_ids": paper_ids,
+        "field_names": field_names,
+        "evidence": evidence,
+    }
+
+
+def _load_job_report(job: WebJob) -> dict[str, Any]:
+    if not job.run_report_path or not job.run_report_path.is_file():
+        raise FileNotFoundError("run report is not available")
+    return load_run_report(job.run_report_path)
+
+
+def _job_paper_item(report: dict[str, Any], paper_id: str) -> dict[str, Any]:
+    for item in report.get("items", []):
+        if isinstance(item, dict) and item.get("paper_id") == paper_id:
+            return item
+    raise FileNotFoundError("paper is not available for this job")
+
+
+def _job_work_dir(report: dict[str, Any]) -> Path:
+    config = report.get("config")
+    if not isinstance(config, dict) or not config.get("work_dir"):
+        raise FileNotFoundError("job workspace is not available")
+    return Path(str(config["work_dir"])).resolve()
+
+
+def _job_field_specs(report: dict[str, Any]) -> list[FieldSpec]:
+    config = report.get("config")
+    raw_fields = config.get("fields") if isinstance(config, dict) else None
+    if not isinstance(raw_fields, list):
+        raise FileNotFoundError("job fields are not available")
+    return [FieldSpec.model_validate(raw_field) for raw_field in raw_fields]
+
+
+def _job_chunk_path(work_dir: Path, paper_id: str) -> Path:
+    path = (work_dir / f"{paper_id}_chunks.jsonl").resolve()
+    if work_dir not in path.parents:
+        raise FileNotFoundError("paper chunks are not available")
+    return path
+
+
+def _read_field_evidence(job: WebJob, paper_id: str, field_name: str) -> dict[str, Any]:
+    report = _load_job_report(job)
+    _job_paper_item(report, paper_id)
+    work_dir = _job_work_dir(report)
+    field_specs = _job_field_specs(report)
+    field_spec = next((candidate for candidate in field_specs if candidate.name == field_name), None)
+    if field_spec is None:
+        raise FileNotFoundError("field is not available for this job")
+
+    extract = load_extract_json(
+        work_dir / f"{paper_id}_extract.json",
+        paper_id=paper_id,
+        field_names=[candidate.name for candidate in field_specs],
+    )
+    extracted_field = extract.get_field(field_name)
+    chunks = {chunk.get("chunk_id"): chunk for chunk in load_chunks_jsonl(_job_chunk_path(work_dir, paper_id))}
+    evidence = []
+    for reference in extracted_field.evidence:
+        chunk = chunks.get(reference.chunk_id)
+        if not isinstance(chunk, dict):
+            continue
+        evidence.append(
+            {
+                "chunk_id": reference.chunk_id,
+                "pages": reference.pages or chunk.get("pages", []),
+                "text": str(chunk.get("text") or ""),
+                "kind": str(chunk.get("kind") or "text"),
+                "table": chunk.get("table"),
+            }
+        )
+
+    language = str(report.get("config", {}).get("language") or "zh")
+    return {
+        "paper_id": paper_id,
+        "title": extract.title or paper_id,
+        "pdf_url": f"/api/jobs/{job.id}/papers/{paper_id}/pdf",
+        "field": {
+            "name": field_name,
+            "label": field_label(field_name, language=language, field_specs=field_specs),
+            "value": extracted_field.value,
+            "evidence": evidence,
+        },
+    }
+
+
+def _job_pdf_path(job: WebJob, paper_id: str) -> Path:
+    report = _load_job_report(job)
+    item = _job_paper_item(report, paper_id)
+    pdf_path = item.get("pdf_path")
+    if not isinstance(pdf_path, str) or not pdf_path:
+        raise FileNotFoundError("PDF is not available for this paper")
+    path = Path(pdf_path).resolve()
+    if path.suffix.lower() != ".pdf" or not path.is_file():
+        raise FileNotFoundError("PDF is not available for this paper")
+    return path
 
 
 def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None = None):
@@ -917,6 +1041,25 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
             raise HTTPException(status_code=404, detail="Job not found") from exc
         except FileNotFoundError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/jobs/{job_id}/papers/{paper_id}/fields/{field_name}/evidence")
+    def field_evidence(job_id: str, paper_id: str, field_name: str):
+        try:
+            return _read_field_evidence(job_manager.get(job_id), paper_id, field_name)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/jobs/{job_id}/papers/{paper_id}/pdf")
+    def paper_pdf(job_id: str, paper_id: str):
+        try:
+            path = _job_pdf_path(job_manager.get(job_id), paper_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return FileResponse(path, media_type="application/pdf", filename=path.name)
 
     @app.get("/api/jobs/{job_id}/files/{artifact}")
     def job_file(job_id: str, artifact: str):

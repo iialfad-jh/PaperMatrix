@@ -268,5 +268,16 @@ def test_matrix_preview_renders_field_comparison_safely(tmp_path: Path):
         PaperMatrixWeb.showAllFields();
         assert.match(element("#matrix-preview").innerHTML, /Method/);
         assert.equal(element("#show-all-fields").disabled, true);
+
+        PaperMatrixWeb.setMatrixPreview({
+          columns: ["Paper", "Method", "Result"],
+          rows: [{ Paper: "Study One", Method: "Trial", Result: "A & B" }],
+          paper_ids: ["paper-1"],
+          field_names: ["method", "result"]
+        });
+        const evidenceMarkup = element("#matrix-preview").innerHTML;
+        assert.match(evidenceMarkup, /data-paper-id="paper-1"/);
+        assert.match(evidenceMarkup, /data-field-name="method"/);
+        assert.match(evidenceMarkup, /class="matrix-evidence-cell"/);
         """,
     )
