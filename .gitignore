@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .pytest-tmp/
 .pytest_tmp/
+.DS_Store
 build/
 .papermatrix/
 matrix.md
