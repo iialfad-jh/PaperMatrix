@@ -59,7 +59,7 @@ h1 { margin: 0; font-family: Georgia, "Noto Serif SC", serif; font-size: clamp(4
 h1 em { color: var(--teal); font-style: normal; }
 .hero-copy { margin: 0; max-width: 540px; padding-left: 24px; border-left: 3px solid var(--accent); color: var(--muted); font-size: 15px; line-height: 1.9; }
 
-.workspace { display: grid; grid-template-columns: minmax(360px, .82fr) minmax(480px, 1.18fr); gap: 22px; align-items: start; }
+.workspace { display: grid; grid-template-columns: 1fr; gap: 22px; align-items: start; }
 .panel { border: 1px solid var(--line); background: var(--card); box-shadow: var(--shadow); backdrop-filter: blur(16px); }
 .composer { padding: 30px; }
 .monitor { min-height: 690px; padding: 30px; }
