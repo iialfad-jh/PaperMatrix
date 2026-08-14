@@ -95,16 +95,18 @@ def run_settings_script(tmp_path: Path, scenario: str) -> None:
               maxChars: control("#max-chars", "max_chars", "3500"),
               maxChunks: control("#max-chunks", "max_chunks", "12"),
               retries: control("#retries", "retries", "2"),
+              resultsDir: control("#results-dir", "results_dir", ""),
               force: control("[name='force']", "force"),
               failFast: control("[name='fail_fast']", "fail_fast"),
               apiKey: control("#api-key", "api_key", ""),
               remember: control("#remember-api-key", "remember_api_key")
             };
             [
-              "#settings-status", "#files", "#file-note", "#custom-fields-wrap", "#reasoning-hint",
+              "#settings-status", "#files", "#file-note", "#custom-fields-wrap", "#reasoning-hint", "#results-dir",
               "#test-provider", "#cancel-job", "#retry-job", "#recent-jobs", "#form-error",
               "#provider-probe-status", "#matrix-preview", "#result-summary", "#field-visibility",
-              "#field-toggles", "#show-all-fields", "[data-testid='health']"
+              "#field-toggles", "#show-all-fields", "#history-folder", "#history-list", "#history-preview",
+              "#history-preview-path", "#history-markdown", "#refresh-history", "[data-testid='health']"
             ].forEach((selector) => element(selector));
 
             const storage = {
@@ -194,6 +196,7 @@ def test_web_settings_restore_accepts_legacy_and_missing_fields(tmp_path: Path):
           apiMode: "responses",
           reasoningEffort: "medium",
           maxChars: "4200",
+          results_dir: "/tmp/papermatrix-results",
           failFast: true,
           rememberApiKey: true,
           apiKey: "sk-legacy-secret"
@@ -207,6 +210,7 @@ def test_web_settings_restore_accepts_legacy_and_missing_fields(tmp_path: Path):
         assert.equal(controls.apiMode.value, "responses");
         assert.equal(controls.reasoning.value, "medium");
         assert.equal(controls.maxChars.value, "4200");
+        assert.equal(controls.resultsDir.value, "/tmp/papermatrix-results");
         assert.equal(controls.failFast.checked, true);
         assert.equal(controls.remember.checked, true);
         assert.equal(controls.apiKey.value, "sk-legacy-secret");
@@ -222,6 +226,7 @@ def test_web_settings_save_handles_storage_failures_and_key_opt_in(tmp_path: Pat
         """
         controls.language.value = "en";
         controls.apiMode.value = "responses";
+        controls.resultsDir.value = "/tmp/custom-results";
         controls.remember.checked = true;
         controls.apiKey.value = "sk-save-secret";
         storage.throwSet = true;
@@ -236,6 +241,7 @@ def test_web_settings_save_handles_storage_failures_and_key_opt_in(tmp_path: Pat
 
         assert.equal(saved.language, "en");
         assert.equal(saved.api_mode, "responses");
+        assert.equal(saved.results_dir, "/tmp/custom-results");
         assert.equal(saved.remember_api_key, false);
         assert.equal(Object.hasOwn(saved, "api_key"), false);
         assert.equal(element("#settings-status").className, "hint settings-status hidden");

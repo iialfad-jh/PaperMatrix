@@ -43,6 +43,8 @@ ASSETS_DIR = Path(__file__).with_name("web_assets")
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 ACTIVE_STATUSES = {"queued", "running", "cancelling"}
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+DEFAULT_RESULTS_DIR_NAME = "PaperMatrix Results"
+MAX_HISTORY_FILES = 500
 
 
 ERROR_GUIDANCE = {
@@ -289,6 +291,7 @@ class JobSpec:
     retries: int = 2
     force: bool = False
     fail_fast: bool = False
+    results_dir: Path | None = None
     retry_report: Path | None = None
 
 
@@ -401,6 +404,19 @@ class JobManager:
     def project_dir(self, project_id: str) -> Path:
         return resolve_project_dir(self.workspace_root, project_id)
 
+    def results_dir(self, requested_dir: str | Path | None = None) -> Path:
+        """Resolve the user-visible results directory without changing the cache workspace."""
+        if requested_dir is None or not str(requested_dir).strip():
+            directory = self.base_dir / DEFAULT_RESULTS_DIR_NAME
+        else:
+            directory = Path(requested_dir).expanduser()
+            if not directory.is_absolute():
+                directory = self.base_dir / directory
+        directory = directory.resolve()
+        if directory.exists() and not directory.is_dir():
+            raise ValueError("results_dir must be a directory")
+        return directory
+
     def is_project_active(self, project_id: str) -> bool:
         with self._lock:
             return any(job.spec.project_id == project_id and job.status in ACTIVE_STATUSES for job in self._jobs.values())
@@ -454,6 +470,7 @@ class JobManager:
             language=previous.spec.language,
             api_key=previous.spec.api_key,
             retries=previous.spec.retries,
+            results_dir=previous.spec.results_dir,
             retry_report=previous.run_report_path,
         )
         return self.submit(retry_spec)
@@ -507,7 +524,7 @@ class JobManager:
             }.items():
                 if path is not None:
                     job.artifacts[name] = Path(path)
-            import_report_path = prepared["config"].work_dir / "import-report.json"
+            import_report_path = prepared["import_report_path"]
             if import_report_path.is_file():
                 job.artifacts["import_report"] = import_report_path
             if result.cancelled:
@@ -549,6 +566,7 @@ class JobManager:
             force = False
             fail_fast = False
             run_report_path = spec.retry_report
+            import_report_path = out.parent / "import-report.json"
         else:
             retry_state = None
             language = spec.language
@@ -570,7 +588,10 @@ class JobManager:
             project_id = spec.project_id
             work_dir = self.project_dir(project_id)
             work_dir.mkdir(parents=True, exist_ok=True)
-            out = work_dir / "matrix.md"
+            results_dir = self.results_dir(spec.results_dir)
+            output_dir = results_dir / project_id
+            output_dir.mkdir(parents=True, exist_ok=True)
+            out = output_dir / "matrix.md"
             source_file = work_dir / "job-input-sources.txt"
             all_sources = [str(path.resolve()) for path in spec.uploaded_paths] + list(spec.source_lines)
             source_file.write_text("\n".join(all_sources) + "\n", encoding="utf-8")
@@ -584,7 +605,7 @@ class JobManager:
                 fail_fast=spec.fail_fast,
                 retries=retries,
             )
-            save_import_report(import_report, work_dir / "import-report.json")
+            import_report_path = save_import_report(import_report, output_dir / "import-report.json")
             job.on_progress(
                 ProgressEvent("import", "completed", total=len(all_sources), payload=dict(import_report["summary"]))
             )
@@ -597,7 +618,7 @@ class JobManager:
             max_chunks = spec.max_chunks
             force = spec.force
             fail_fast = spec.fail_fast
-            run_report_path = work_dir / "run-report.json"
+            run_report_path = output_dir / "run-report.json"
 
         if not paper_plan:
             raise PipelineError("run report contains no retryable PDF paths")
@@ -637,6 +658,7 @@ class JobManager:
             "llm_factory": llm_factory,
             "retry_state": retry_state,
             "run_report_path": run_report_path,
+            "import_report_path": import_report_path,
         }
 
 
@@ -787,6 +809,48 @@ def _job_pdf_path(job: WebJob, paper_id: str) -> Path:
     return path
 
 
+def _history_files(results_dir: Path) -> list[dict[str, Any]]:
+    if not results_dir.exists():
+        return []
+    if not results_dir.is_dir():
+        raise ValueError("results_dir must be a directory")
+
+    files: list[dict[str, Any]] = []
+    for candidate in results_dir.rglob("*.md"):
+        try:
+            path = candidate.resolve()
+            relative_path = path.relative_to(results_dir)
+            stat = path.stat()
+        except (OSError, ValueError):
+            continue
+        if not path.is_file():
+            continue
+        files.append(
+            {
+                "path": relative_path.as_posix(),
+                "name": path.name,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                "size": stat.st_size,
+            }
+        )
+    files.sort(key=lambda item: (str(item["modified_at"]), str(item["path"])), reverse=True)
+    return files[:MAX_HISTORY_FILES]
+
+
+def _history_markdown_path(results_dir: Path, relative_path: str) -> Path:
+    requested_path = Path(relative_path)
+    if requested_path.is_absolute() or not relative_path.strip():
+        raise ValueError("history path must be a relative Markdown path")
+    path = (results_dir / requested_path).resolve()
+    try:
+        path.relative_to(results_dir)
+    except ValueError as exc:
+        raise ValueError("history path must stay inside results_dir") from exc
+    if path.suffix.lower() != ".md" or not path.is_file():
+        raise FileNotFoundError("Markdown result was not found")
+    return path
+
+
 def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None = None):
     if FastAPI is None:  # pragma: no cover - exercised only without the optional dependency
         raise RuntimeError('Web UI dependencies are missing; install them with pip install -e ".[web]"')
@@ -818,6 +882,7 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
                 "max_chars": 3500,
                 "max_chunks": 12,
                 "retries": 2,
+                "results_dir": str(job_manager.results_dir()),
             },
         }
 
@@ -884,6 +949,32 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
     def jobs():
         return {"jobs": [job.as_dict() for job in job_manager.list()]}
 
+    @app.get("/api/history")
+    def history(results_dir: str = ""):
+        try:
+            directory = job_manager.results_dir(results_dir)
+            return {
+                "results_dir": str(directory),
+                "exists": directory.is_dir(),
+                "files": _history_files(directory),
+            }
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/history/file")
+    def history_file(results_dir: str = "", path: str = ""):
+        try:
+            directory = job_manager.results_dir(results_dir)
+            markdown_path = _history_markdown_path(directory, path)
+            return {
+                "path": markdown_path.relative_to(directory).as_posix(),
+                "content": markdown_path.read_text(encoding="utf-8"),
+            }
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (FileNotFoundError, OSError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.post("/api/jobs", status_code=202)
     async def create_job(
         source: str = Form(""),
@@ -901,6 +992,7 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
         retries: int = Form(2),
         force: bool = Form(False),
         fail_fast: bool = Form(False),
+        results_dir: str = Form(""),
         files: list[UploadFile] = File(default=[]),
     ):
         normalized_project_id = project_id.strip() or f"review-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
@@ -910,6 +1002,7 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
             raise HTTPException(status_code=422, detail="Provide at least one PDF upload or paper source.")
         try:
             project_dir = job_manager.project_dir(normalized_project_id)
+            normalized_results_dir = job_manager.results_dir(results_dir)
             if job_manager.is_project_active(normalized_project_id):
                 raise JobConflictError(f'project "{normalized_project_id}" already has an active job')
             if not 1 <= max_chars <= 100_000:
@@ -989,6 +1082,7 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
             retries=retries,
             force=force,
             fail_fast=fail_fast,
+            results_dir=normalized_results_dir,
         )
         try:
             job = job_manager.submit(spec)

@@ -10,7 +10,8 @@ const state = {
   evidence: null,
   evidenceIndex: 0,
   pdfPage: 1,
-  evidenceRequest: 0
+  evidenceRequest: 0,
+  historyRefreshForJobId: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -21,7 +22,7 @@ const phaseLabels = { import: "导入来源", pdf: "解析 PDF", llm: "抽取字
 const artifactLabels = { markdown: "Markdown", csv: "CSV", evidence: "证据", report: "运行报告", import_report: "导入报告" };
 const settingsStorageKey = "papermatrix.web.settings.v1";
 const persistedValueNames = [
-  "language", "preset", "fields", "model", "base_url", "api_mode", "reasoning_effort", "max_chars", "max_chunks", "retries"
+  "language", "preset", "fields", "model", "base_url", "api_mode", "reasoning_effort", "max_chars", "max_chunks", "retries", "results_dir"
 ];
 const persistedCheckboxNames = ["force", "fail_fast"];
 const legacySettingsNames = {
@@ -198,6 +199,7 @@ async function loadConfig() {
   $("#model").placeholder = config.defaults.model;
   $("#api-mode").value = config.defaults.api_mode;
   $("#reasoning-effort").value = config.defaults.reasoning_effort;
+  if (typeof config.defaults.results_dir === "string") $("#results-dir").value = config.defaults.results_dir;
   restoreSettings();
   updateReasoningAvailability();
 }
@@ -294,10 +296,53 @@ function updateJob(job) {
   } else {
     $("#results").classList.add("hidden");
   }
+  if (job.status === "completed" && job.artifacts?.markdown && state.historyRefreshForJobId !== job.id) {
+    state.historyRefreshForJobId = job.id;
+    loadHistory();
+  }
 }
 
 function renderDownloads(artifacts) {
   $("#downloads").innerHTML = Object.entries(artifacts).map(([name, href]) => `<a href="${escapeHtml(href)}" download>${escapeHtml(artifactLabels[name] || name)} ↓</a>`).join("");
+}
+
+function historyUrl(path = "") {
+  const resultsDir = $("#results-dir").value.trim();
+  const query = new URLSearchParams({ results_dir: resultsDir });
+  if (path) query.set("path", path);
+  return `/api/history${path ? "/file" : ""}?${query.toString()}`;
+}
+
+function renderHistory(history) {
+  $("#history-folder").textContent = history.exists ? `结果文件夹：${history.results_dir}` : `结果文件夹尚未创建：${history.results_dir}`;
+  const list = $("#history-list");
+  const files = history.files || [];
+  if (!files.length) {
+    list.innerHTML = '<p class="muted">此文件夹中还没有 Markdown 结果。</p>';
+    return;
+  }
+  list.innerHTML = files.map((file) => `<button type="button" class="history-file" data-history-path="${escapeHtml(file.path)}"><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.path)} · ${escapeHtml(new Date(file.modified_at).toLocaleString())}</small></button>`).join("");
+}
+
+async function loadHistory() {
+  try {
+    renderHistory(await api(historyUrl()));
+  } catch (error) {
+    $("#history-folder").textContent = "无法读取结果文件夹。";
+    $("#history-list").innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function openHistory(path) {
+  try {
+    const file = await api(historyUrl(path));
+    $("#history-preview-path").textContent = file.path;
+    $("#history-markdown").textContent = file.content;
+    $("#history-preview").classList.remove("hidden");
+  } catch (error) {
+    $("#history-preview").classList.add("hidden");
+    $("#history-folder").textContent = error.message;
+  }
 }
 
 async function loadPreview(jobId) {
@@ -603,6 +648,7 @@ async function retryCurrent() {
 async function bootstrap() {
   try {
     await Promise.all([loadConfig(), loadJobs(), api("/api/health")]);
+    await loadHistory();
   } catch (error) {
     const health = $("[data-testid='health']");
     health.textContent = "服务不可用";
@@ -621,6 +667,8 @@ function bindUi() {
   $("#test-provider").addEventListener("click", testProvider);
   $("#cancel-job").addEventListener("click", cancelCurrent);
   $("#retry-job").addEventListener("click", retryCurrent);
+  $("#refresh-history").addEventListener("click", loadHistory);
+  $("#results-dir").addEventListener("change", () => { saveSettings(); loadHistory(); });
   $("#show-all-fields").addEventListener("click", showAllFields);
   $("#matrix-preview").addEventListener("click", (event) => {
     const button = event.target.closest("[data-paper-id][data-field-name]");
@@ -641,6 +689,10 @@ function bindUi() {
     const button = event.target.closest("[data-job-id]");
     if (button) selectJob(button.dataset.jobId);
   });
+  $("#history-list").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-history-path]");
+    if (button) openHistory(button.dataset.historyPath);
+  });
 }
 
 if (typeof window !== "undefined") {
@@ -653,6 +705,8 @@ if (typeof window !== "undefined") {
     showAllFields,
     openFieldEvidence,
     closeEvidenceInspector,
+    loadHistory,
+    openHistory,
     settingsStorageKey
   };
 }

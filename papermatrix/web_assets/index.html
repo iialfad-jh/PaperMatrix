@@ -37,6 +37,10 @@
             <input id="project-id" name="project_id" type="text" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" placeholder="留空将自动生成">
             <p class="hint">相同 ID 会复用已有下载与抽取缓存。</p>
 
+            <label for="results-dir">结果文件夹</label>
+            <input id="results-dir" name="results_dir" type="text" autocomplete="off" spellcheck="false" placeholder="启动目录下的 PaperMatrix Results">
+            <p class="hint">Markdown、CSV、证据和报告会保存在此文件夹的项目子目录中。</p>
+
             <label for="source">论文来源</label>
             <textarea id="source" name="source" rows="5" placeholder="每行一个来源，例如：&#10;arxiv:2401.12345&#10;doi:10.1038/s41586-024-00000-0&#10;https://example.org/paper.pdf"></textarea>
 
@@ -199,6 +203,22 @@
       <section class="recent" aria-labelledby="recent-title">
         <div class="recent-heading"><div><span class="step">↺</span><h2 id="recent-title">本次会话</h2></div><p>点击任务可重新查看状态与结果</p></div>
         <div id="recent-jobs" class="recent-jobs"><p class="muted">还没有任务。</p></div>
+      </section>
+
+      <section class="history" aria-labelledby="history-title">
+        <div class="recent-heading">
+          <div><span class="step">⌁</span><h2 id="history-title">历史结果</h2></div>
+          <button id="refresh-history" class="secondary" type="button">刷新列表</button>
+        </div>
+        <p id="history-folder" class="muted"></p>
+        <div id="history-list" class="history-list"><p class="muted">正在读取结果文件夹...</p></div>
+        <section id="history-preview" class="history-preview hidden" aria-labelledby="history-preview-title">
+          <div class="history-preview-heading">
+            <h3 id="history-preview-title">Markdown 预览</h3>
+            <span id="history-preview-path" class="muted"></span>
+          </div>
+          <pre id="history-markdown"></pre>
+        </section>
       </section>
     </main>
 

@@ -157,6 +157,58 @@ def test_web_job_upload_streams_progress_and_previews_results(tmp_path: Path):
         assert '"status":"completed"' in events
 
 
+def test_web_stores_results_in_selected_folder_and_reads_markdown_history(tmp_path: Path):
+    def runner(config, paper_plan, _llm_factory, **kwargs):
+        return write_success_result(config, paper_plan, Path(kwargs["run_report_path"]), kwargs["progress_callback"])
+
+    results_dir = tmp_path / "literature-results"
+    legacy_dir = results_dir / "previous-review"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "notes.md").write_text("# Existing review\n", encoding="utf-8")
+
+    manager = JobManager(tmp_path, pipeline_runner=runner)
+    with TestClient(create_app(tmp_path, manager=manager)) as client:
+        config = client.get("/api/config").json()
+        assert config["defaults"]["results_dir"] == str(tmp_path / "PaperMatrix Results")
+
+        response = client.post(
+            "/api/jobs",
+            data={"project_id": "history-test", "preset": "general", "results_dir": str(results_dir)},
+            files={"files": ("paper.pdf", b"%PDF-1.4\n", "application/pdf")},
+        )
+        assert response.status_code == 202, response.text
+        final = wait_for_status(client, response.json()["id"], {"completed"})
+        assert set(final["artifacts"]) == {"markdown", "csv", "evidence", "report", "import_report"}
+
+        history = client.get("/api/history", params={"results_dir": str(results_dir)})
+        assert history.status_code == 200, history.text
+        paths = {file["path"] for file in history.json()["files"]}
+        assert {"previous-review/notes.md", "history-test/matrix.md", "history-test/matrix.evidence.md"} <= paths
+
+        markdown = client.get(
+            "/api/history/file",
+            params={"results_dir": str(results_dir), "path": "history-test/matrix.md"},
+        )
+        assert markdown.status_code == 200
+        assert markdown.json() == {"path": "history-test/matrix.md", "content": "# Matrix\n"}
+
+        escaped = client.get(
+            "/api/history/file",
+            params={"results_dir": str(results_dir), "path": "../outside.md"},
+        )
+        assert escaped.status_code == 422
+
+    output_dir = results_dir / "history-test"
+    assert {path.name for path in output_dir.iterdir()} >= {
+        "matrix.md",
+        "matrix.csv",
+        "matrix.evidence.md",
+        "run-report.json",
+        "import-report.json",
+    }
+    assert manager.get(final["id"]).spec.results_dir == results_dir.resolve()
+
+
 def test_web_job_surfaces_the_run_report_failure_reason(tmp_path: Path):
     def runner(config, paper_plan, _llm_factory, **kwargs):
         report = create_run_report(config.report_config(), paper_plan)

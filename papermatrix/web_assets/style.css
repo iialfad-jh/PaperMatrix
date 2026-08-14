@@ -213,14 +213,26 @@ summary { padding: 14px 2px; color: var(--muted); font-size: 12px; font-weight: 
 .evidence { margin-top: 14px; }
 .evidence pre { max-height: 300px; overflow: auto; margin: 0 0 15px; padding: 14px; white-space: pre-wrap; color: #33494d; background: #f0eee8; font: 11px/1.65 ui-monospace, monospace; }
 
-.recent { margin: 28px 0 50px; padding: 26px 30px; border: 1px solid var(--line); background: rgba(255,253,248,.58); }
+.recent, .history { margin: 28px 0 0; padding: 26px 30px; border: 1px solid var(--line); background: rgba(255,253,248,.58); }
+.history { margin-bottom: 50px; }
 .recent-heading { padding-bottom: 18px; }
+.history .recent-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.history .recent-heading .secondary { min-height: 32px; padding: 7px 10px; }
 .recent-jobs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding-top: 16px; }
 .recent-job { width: 100%; padding: 13px; display: grid; grid-template-columns: 1fr auto; gap: 7px; text-align: left; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: rgba(255,255,255,.64); }
 .recent-job:hover { border-color: var(--teal); }
 .recent-job strong { overflow: hidden; text-overflow: ellipsis; }
 .recent-job small { color: var(--muted); grid-column: 1 / -1; }
 .recent-job .mini-status { color: var(--teal); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.history-folder { overflow-wrap: anywhere; }
+.history-list { display: grid; gap: 8px; margin-top: 14px; }
+.history-file { display: grid; gap: 4px; width: 100%; padding: 11px 13px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: rgba(255,255,255,.64); text-align: left; }
+.history-file:hover { border-color: var(--teal); color: var(--teal); }
+.history-file small { overflow-wrap: anywhere; color: var(--muted); font-size: 10px; }
+.history-preview { margin-top: 16px; border-top: 1px solid var(--line); }
+.history-preview-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 14px 0 9px; }
+.history-preview h3 { margin: 0; font-size: 13px; }
+.history-preview pre { max-height: 460px; overflow: auto; margin: 0; padding: 14px; border: 1px solid var(--line); white-space: pre-wrap; color: #33494d; background: #f0eee8; font: 11px/1.65 ui-monospace, monospace; }
 .muted { color: var(--muted); font-size: 12px; }
 
 footer { height: 70px; display: flex; justify-content: space-between; align-items: center; color: var(--muted); border-top: 1px solid var(--line); font-size: 11px; letter-spacing: .08em; }
