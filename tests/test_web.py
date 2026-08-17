@@ -492,9 +492,14 @@ def test_web_ui_exposes_browser_local_settings_persistence(tmp_path: Path):
     assert "job.error_detail || job.error" in script.text
     assert 'action.className = "error-action"' in script.text
     assert 'summary.textContent = "技术详情"' in script.text
-    assert 'src="/assets/pdf-viewer.js"' in page.text
+    assert 'src="assets/pdf-viewer.js"' in page.text
+    assert 'href="assets/style.css"' in page.text
     assert client.get("/assets/pdf-viewer.js").status_code == 200
     assert client.get("/assets/pdfjs/pdf.min.mjs").status_code == 200
+    viewer_script = client.get("/assets/pdf-viewer.js").text
+    assert 'from "./pdfjs/pdf.min.mjs"' in viewer_script
+    assert 'new URL("./pdfjs/pdf.worker.min.mjs", import.meta.url)' in viewer_script
+    assert "PDF 加载失败：" in viewer_script
 
 
 def test_web_reuses_the_same_content_addressed_upload(tmp_path: Path):

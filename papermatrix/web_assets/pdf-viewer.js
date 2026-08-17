@@ -1,6 +1,6 @@
-import * as pdfjsLib from "/assets/pdfjs/pdf.min.mjs";
+import * as pdfjsLib from "./pdfjs/pdf.min.mjs";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = "/assets/pdfjs/pdf.worker.min.mjs";
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("./pdfjs/pdf.worker.min.mjs", import.meta.url).href;
 
 let activeDocument = null;
 let activeUrl = null;
@@ -48,7 +48,12 @@ function highlightElement(item, viewport) {
 async function loadDocument(url) {
   if (activeDocument && activeUrl === url) return activeDocument;
   if (activeDocument) await activeDocument.destroy();
-  activeDocument = await pdfjsLib.getDocument({ url }).promise;
+  try {
+    activeDocument = await pdfjsLib.getDocument({ url }).promise;
+  } catch (error) {
+    const message = error?.message || String(error);
+    throw new Error("PDF 加载失败：" + message);
+  }
   activeUrl = url;
   return activeDocument;
 }
@@ -82,11 +87,16 @@ async function renderEvidencePage({ container, url, pageNumber, evidenceText }) 
   pageSurface.style.height = `${viewport.height}px`;
   pageSurface.append(canvas);
 
-  await page.render({
-    canvasContext: context,
-    viewport,
-    transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
-  }).promise;
+  try {
+    await page.render({
+      canvasContext: context,
+      viewport,
+      transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
+    }).promise;
+  } catch (error) {
+    const message = error?.message || String(error);
+    throw new Error("PDF 页面渲染失败：" + message);
+  }
   const textContent = await page.getTextContent();
   const matches = matchingItems(textContent.items, evidenceText);
   matches.forEach((item) => pageSurface.append(highlightElement(item, viewport)));

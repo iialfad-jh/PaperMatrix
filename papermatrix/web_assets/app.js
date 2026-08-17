@@ -15,6 +15,15 @@ const state = {
 };
 
 const $ = (selector) => document.querySelector(selector);
+const appBasePath = (() => {
+  if (typeof document === "undefined" || !document.baseURI) return "";
+  const path = new URL(document.baseURI).pathname.replace(/\/$/, "");
+  return path === "/" ? "" : path;
+})();
+function appUrl(path) {
+  if (!path || !path.startsWith("/") || /^\/\//.test(path)) return path;
+  return appBasePath + path;
+}
 const statusLabels = {
   queued: "排队中", running: "处理中", cancelling: "正在取消", completed: "已完成", failed: "失败", cancelled: "已取消"
 };
@@ -40,7 +49,7 @@ function escapeHtml(value) {
 }
 
 async function api(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await fetch(appUrl(url), options);
   let payload = {};
   try { payload = await response.json(); } catch (_) { /* no JSON body */ }
   if (!response.ok) {
@@ -303,7 +312,7 @@ function updateJob(job) {
 }
 
 function renderDownloads(artifacts) {
-  $("#downloads").innerHTML = Object.entries(artifacts).map(([name, href]) => `<a href="${escapeHtml(href)}" download>${escapeHtml(artifactLabels[name] || name)} ↓</a>`).join("");
+  $("#downloads").innerHTML = Object.entries(artifacts).map(([name, href]) => `<a href="${escapeHtml(appUrl(href))}" download>${escapeHtml(artifactLabels[name] || name)} ↓</a>`).join("");
 }
 
 function historyUrl(path = "") {
@@ -483,7 +492,7 @@ async function renderEvidencePdf(page = evidencePage(state.evidence?.field?.evid
   try {
     const result = await window.PaperMatrixPdfViewer.renderEvidencePage({
       container: viewer,
-      url: state.evidence.pdf_url,
+      url: appUrl(state.evidence.pdf_url),
       pageNumber: page,
       evidenceText: source.text
     });
@@ -521,7 +530,7 @@ async function openFieldEvidence(paperId, fieldName) {
     $("#evidence-inspector-title").textContent = evidence.field?.label || fieldName;
     $("#evidence-inspector-meta").textContent = evidence.title || paperId;
     $("#evidence-field-value").textContent = evidence.field?.value || "未知";
-    $("#pdf-open-link").href = evidence.pdf_url;
+    $("#pdf-open-link").href = appUrl(evidence.pdf_url);
     renderEvidenceSources();
     await renderEvidencePdf();
   } catch (error) {
@@ -543,7 +552,7 @@ function connectEvents(jobId) {
   if (state.eventSource) state.eventSource.close();
   state.events = [];
   renderEvents();
-  state.eventSource = new EventSource(`/api/jobs/${jobId}/events`);
+  state.eventSource = new EventSource(appUrl(`/api/jobs/${jobId}/events`));
   state.eventSource.onmessage = (message) => {
     const event = JSON.parse(message.data);
     state.events.push(event);
