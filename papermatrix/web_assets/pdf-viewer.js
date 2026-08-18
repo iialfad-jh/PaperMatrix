@@ -45,14 +45,36 @@ function highlightElement(item, viewport) {
   return highlight;
 }
 
+async function openDocument(url, options = {}) {
+  const loadingTask = pdfjsLib.getDocument({ url, ...options });
+  try {
+    return await loadingTask.promise;
+  } catch (error) {
+    await loadingTask.destroy().catch(() => {});
+    throw error;
+  }
+}
+
 async function loadDocument(url) {
   if (activeDocument && activeUrl === url) return activeDocument;
-  if (activeDocument) await activeDocument.destroy();
+  if (activeDocument) {
+    await activeDocument.destroy();
+    activeDocument = null;
+    activeUrl = null;
+  }
   try {
-    activeDocument = await pdfjsLib.getDocument({ url }).promise;
+    activeDocument = await openDocument(url);
   } catch (error) {
-    const message = error?.message || String(error);
-    throw new Error("PDF 加载失败：" + message);
+    // Some deployments block module workers through their CSP or proxy. Keep
+    // the viewer usable by retrying PDF.js on the main thread in that case.
+    try {
+      activeDocument = await openDocument(url, { disableWorker: true });
+    } catch (fallbackError) {
+      activeDocument = null;
+      activeUrl = null;
+      const message = fallbackError?.message || error?.message || String(fallbackError);
+      throw new Error("PDF 加载失败：" + message);
+    }
   }
   activeUrl = url;
   return activeDocument;
@@ -75,6 +97,7 @@ async function renderEvidencePage({ container, url, pageNumber, evidenceText }) 
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d", { alpha: false });
+  if (!context) throw new Error("PDF 页面渲染失败：浏览器不支持 Canvas");
   const outputScale = window.devicePixelRatio || 1;
   canvas.width = Math.floor(viewport.width * outputScale);
   canvas.height = Math.floor(viewport.height * outputScale);

@@ -206,6 +206,7 @@ summary { padding: 14px 2px; color: var(--muted); font-size: 12px; font-weight: 
 .pdf-open-link { margin-left: auto; color: var(--teal); font-size: 11px; font-weight: 800; text-decoration: none; }
 .pdf-open-link:hover { color: var(--accent-dark); text-decoration: underline; }
 .pdf-viewer { min-height: 408px; max-height: 70vh; overflow: auto; padding: 18px; display: grid; place-items: start center; color: var(--muted); font-size: 12px; }
+.pdf-native-viewer { display: block; width: 100%; min-height: 520px; border: 0; background: #fff; }
 .pdf-loading { margin: 28px 0; }
 .pdf-page-surface { position: relative; flex: 0 0 auto; box-shadow: 0 6px 22px rgba(20,39,44,.2); background: #fff; }
 .pdf-page-surface canvas { display: block; }

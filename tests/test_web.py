@@ -147,6 +147,7 @@ def test_web_job_upload_streams_progress_and_previews_results(tmp_path: Path):
         pdf = client.get(f"/api/jobs/{job_id}/papers/{paper_id}/pdf")
         assert pdf.status_code == 200
         assert pdf.headers["content-type"].startswith("application/pdf")
+        assert pdf.headers["content-disposition"].startswith("inline;")
         assert pdf.content == b"%PDF-1.4\n"
 
         assert client.get(f"/api/jobs/{job_id}/papers/not-a-paper/pdf").status_code == 404
@@ -500,6 +501,9 @@ def test_web_ui_exposes_browser_local_settings_persistence(tmp_path: Path):
     assert 'from "./pdfjs/pdf.min.mjs"' in viewer_script
     assert 'new URL("./pdfjs/pdf.worker.min.mjs", import.meta.url)' in viewer_script
     assert "PDF 加载失败：" in viewer_script
+    assert 'disableWorker: true' in viewer_script
+    assert 'showNativePdfFallback' in script.text
+    assert 'className = "pdf-native-viewer"' in script.text
 
 
 def test_web_reuses_the_same_content_addressed_upload(tmp_path: Path):

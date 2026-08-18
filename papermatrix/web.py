@@ -1153,7 +1153,12 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
             raise HTTPException(status_code=404, detail="Job not found") from exc
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return FileResponse(path, media_type="application/pdf", filename=path.name)
+        return FileResponse(
+            path,
+            media_type="application/pdf",
+            filename=path.name,
+            content_disposition_type="inline",
+        )
 
     @app.get("/api/jobs/{job_id}/files/{artifact}")
     def job_file(job_id: str, artifact: str):

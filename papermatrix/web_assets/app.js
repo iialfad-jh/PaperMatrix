@@ -455,6 +455,16 @@ function closeEvidenceInspector() {
   window.PaperMatrixPdfViewer?.clearPdfViewer();
 }
 
+function showNativePdfFallback(viewer, url) {
+  viewer.replaceChildren();
+  const frame = document.createElement("iframe");
+  frame.className = "pdf-native-viewer";
+  frame.src = url;
+  frame.title = "PDF 原文";
+  frame.loading = "lazy";
+  viewer.append(frame);
+}
+
 function renderEvidenceSources() {
   const list = $("#evidence-source-list");
   list.replaceChildren();
@@ -505,8 +515,9 @@ async function renderEvidencePdf(page = evidencePage(state.evidence?.field?.evid
       ? `已在此页标记 ${result.matchCount} 处匹配文本。`
       : "已定位到证据页，但未能自动匹配原文。";
   } catch (error) {
-    viewer.textContent = "无法渲染此 PDF 页面，请使用“打开 PDF”查看原文。";
-    status.textContent = error.message || "PDF 渲染失败。";
+    const pdfUrl = appUrl(state.evidence.pdf_url);
+    showNativePdfFallback(viewer, pdfUrl);
+    status.textContent = `${error.message || "PDF 渲染失败。"} 已切换到浏览器内置查看器。`;
     $("#pdf-page-label").textContent = "—";
   }
 }
