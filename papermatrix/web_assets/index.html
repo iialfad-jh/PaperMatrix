@@ -10,7 +10,7 @@
 <body>
   <div class="page-shell">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="PaperMatrix 首页">
+      <a class="brand" href="./" aria-label="PaperMatrix 首页">
         <span class="brand-mark">PM</span>
         <span><strong>PaperMatrix</strong><small>论文证据工作台</small></span>
       </a>
@@ -39,7 +39,7 @@
 
             <label for="results-dir">结果文件夹</label>
             <input id="results-dir" name="results_dir" type="text" autocomplete="off" spellcheck="false" placeholder="启动目录下的 PaperMatrix Results">
-            <p class="hint">Markdown、CSV、证据和报告会保存在此文件夹的项目子目录中。</p>
+            <p class="hint">填写结果根目录内的子文件夹；Markdown、CSV、证据和报告会保存在其中的项目子目录中。</p>
 
             <label for="source">论文来源</label>
             <textarea id="source" name="source" rows="5" placeholder="每行一个来源，例如：&#10;arxiv:2401.12345&#10;doi:10.1038/s41586-024-00000-0&#10;https://example.org/paper.pdf"></textarea>
@@ -72,6 +72,14 @@
             <details>
               <summary>模型与高级设置</summary>
               <div class="details-body">
+                <div class="workspace-access">
+                  <label for="access-token">工作台访问令牌</label>
+                  <div class="provider-probe-row">
+                    <input id="access-token" type="password" autocomplete="current-password" spellcheck="false" placeholder="仅服务器启用访问控制时填写">
+                    <button id="connect-access" class="secondary" type="button">连接工作台</button>
+                  </div>
+                  <p id="access-status" class="hint" role="status" aria-live="polite"></p>
+                </div>
                 <div class="field-grid three">
                   <div>
                     <label for="model">模型</label>

@@ -13,7 +13,7 @@ from papermatrix.extract import save_extract_json
 from papermatrix.pipeline import PipelineResult, ProgressEvent
 from papermatrix.run_report import create_run_report, save_run_report
 from papermatrix.schema import Evidence, ExtractedField, PaperExtract
-from papermatrix.web import JobManager, _classify_service_error, create_app
+from papermatrix.web import SESSION_COOKIE_NAME, JobManager, _classify_service_error, create_app
 
 
 class ProviderError(RuntimeError):
@@ -162,7 +162,7 @@ def test_web_stores_results_in_selected_folder_and_reads_markdown_history(tmp_pa
     def runner(config, paper_plan, _llm_factory, **kwargs):
         return write_success_result(config, paper_plan, Path(kwargs["run_report_path"]), kwargs["progress_callback"])
 
-    results_dir = tmp_path / "literature-results"
+    results_dir = tmp_path / "PaperMatrix Results" / "literature-results"
     legacy_dir = results_dir / "previous-review"
     legacy_dir.mkdir(parents=True)
     (legacy_dir / "notes.md").write_text("# Existing review\n", encoding="utf-8")
@@ -208,6 +208,77 @@ def test_web_stores_results_in_selected_folder_and_reads_markdown_history(tmp_pa
         "import-report.json",
     }
     assert manager.get(final["id"]).spec.results_dir == results_dir.resolve()
+
+
+def test_web_restricts_results_to_the_configured_root(tmp_path: Path):
+    manager = JobManager(tmp_path)
+    outside = tmp_path / "outside-results"
+
+    with TestClient(create_app(tmp_path, manager=manager)) as client:
+        history = client.get("/api/history", params={"results_dir": str(outside)})
+        submitted = client.post(
+            "/api/jobs",
+            data={"project_id": "outside-results", "preset": "general", "results_dir": str(outside)},
+            files={"files": ("paper.pdf", b"%PDF-1.4\n", "application/pdf")},
+        )
+
+    assert history.status_code == 422
+    assert submitted.status_code == 422
+    assert "configured results root" in history.json()["detail"]
+    assert not outside.exists()
+
+
+def test_web_server_mode_requires_a_session_and_rejects_local_sources(tmp_path: Path):
+    local_pdf = tmp_path / "server-private.pdf"
+    local_pdf.write_bytes(b"%PDF-1.4\n")
+    manager = JobManager(tmp_path, allow_local_sources=False)
+
+    with TestClient(create_app(tmp_path, manager=manager, auth_token="workspace-token"), base_url="https://testserver") as client:
+        assert client.get("/api/config").status_code == 401
+        assert client.post("/api/session", data={"access_token": "wrong"}).status_code == 401
+        session = client.post("/api/session", data={"access_token": "workspace-token"})
+        assert session.status_code == 200
+        assert SESSION_COOKIE_NAME in session.headers["set-cookie"]
+        assert "HttpOnly" in session.headers["set-cookie"]
+        assert "Secure" in session.headers["set-cookie"]
+        assert client.get("/api/config").status_code == 200
+
+        response = client.post(
+            "/api/jobs",
+            data={"project_id": "server-local", "preset": "general", "source": str(local_pdf)},
+        )
+
+    assert response.status_code == 422
+    assert "not server-local paths" in response.json()["detail"]
+
+
+def test_web_restores_completed_jobs_after_restart(tmp_path: Path):
+    def runner(config, paper_plan, _llm_factory, **kwargs):
+        return write_success_result(config, paper_plan, Path(kwargs["run_report_path"]), kwargs["progress_callback"])
+
+    first_manager = JobManager(tmp_path, pipeline_runner=runner)
+    with TestClient(create_app(tmp_path, manager=first_manager)) as client:
+        created = client.post(
+            "/api/jobs",
+            data={"project_id": "persistent-job", "preset": "general"},
+            files={"files": ("paper.pdf", b"%PDF-1.4\n", "application/pdf")},
+        ).json()
+        completed = wait_for_status(client, created["id"], {"completed"})
+
+    restarted_manager = JobManager(tmp_path, pipeline_runner=runner)
+    with TestClient(create_app(tmp_path, manager=restarted_manager)) as client:
+        restored = client.get(f"/api/jobs/{completed['id']}")
+        listed = client.get("/api/jobs")
+
+    assert restored.status_code == 200
+    assert restored.json()["status"] == "completed"
+    assert restored.json()["artifacts"]["markdown"]
+    assert [job["id"] for job in listed.json()["jobs"]] == [completed["id"]]
+
+
+def test_web_accepts_a_reverse_proxy_root_path(tmp_path: Path):
+    app = create_app(tmp_path, root_path="/papermatrix")
+    assert app.root_path == "/papermatrix"
 
 
 def test_web_job_surfaces_the_run_report_failure_reason(tmp_path: Path):

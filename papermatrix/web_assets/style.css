@@ -151,6 +151,10 @@ summary { padding: 14px 2px; color: var(--muted); font-size: 12px; font-weight: 
 .notice.error details { margin-top: 8px; border: 0; }
 .notice.error details summary { padding: 0; cursor: pointer; font-size: 11px; font-weight: 700; }
 .notice.error details code { display: block; margin-top: 5px; overflow-wrap: anywhere; color: #6c4945; font-size: 10px; }
+.workspace-access { margin-bottom: 16px; padding: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.52); }
+.workspace-access .provider-probe-row { margin: 7px 0 0; }
+.workspace-access input { min-width: 0; flex: 1; }
+.workspace-access .hint { margin: 7px 0 0; }
 
 .results { margin-top: 22px; padding: 30px; }
 .result-tools { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }

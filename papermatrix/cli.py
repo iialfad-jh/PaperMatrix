@@ -122,6 +122,7 @@ def main(
     provider_probe: bool = typer.Option(False, "--provider-probe", help="Send one tiny provider test request and exit."),
     host: str = typer.Option("127.0.0.1", "--host", help="Web UI host (used only with SOURCE=web)."),
     port: int = typer.Option(8765, "--port", min=1, max=65535, help="Web UI port (used only with SOURCE=web)."),
+    root_path: str = typer.Option("", "--root-path", help="Reverse-proxy path prefix, for example /papermatrix."),
     no_open: bool = typer.Option(False, "--no-open", help="Do not open a browser when starting the Web UI."),
 ) -> None:
     try:
@@ -135,7 +136,7 @@ def main(
         try:
             from .web import serve
 
-            serve(host=host, port=port, open_browser=not no_open, base_dir=Path.cwd())
+            serve(host=host, port=port, open_browser=not no_open, base_dir=Path.cwd(), root_path=root_path)
         except RuntimeError as exc:
             typer.echo(str(exc), err=True)
             raise typer.Exit(1) from exc

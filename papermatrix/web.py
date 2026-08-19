@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
+import secrets
 import threading
 import uuid
 import webbrowser
@@ -12,12 +14,12 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 try:  # Optional dependency: importing papermatrix.web should still give a useful error without it.
-    from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+    from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
     from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
     from fastapi.staticfiles import StaticFiles
 except ImportError:  # pragma: no cover - depends on the caller's installation extras
     FastAPI = None  # type: ignore[assignment]
-    File = Form = Header = HTTPException = UploadFile = None  # type: ignore[assignment]
+    File = Form = Header = HTTPException = Request = UploadFile = None  # type: ignore[assignment]
     FileResponse = HTMLResponse = JSONResponse = StreamingResponse = StaticFiles = None  # type: ignore[assignment]
 
 from .batch import load_sources_file, resolve_source_list, save_import_report
@@ -45,6 +47,8 @@ ACTIVE_STATUSES = {"queued", "running", "cancelling"}
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 DEFAULT_RESULTS_DIR_NAME = "PaperMatrix Results"
 MAX_HISTORY_FILES = 500
+JOB_RECORD_VERSION = 1
+SESSION_COOKIE_NAME = "papermatrix_session"
 
 
 ERROR_GUIDANCE = {
@@ -273,6 +277,27 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_root_path(value: str | None) -> str:
+    if not value or not value.strip() or value.strip() == "/":
+        return ""
+    return "/" + value.strip().strip("/")
+
+
+def _is_path_within(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class JobSpec:
     project_id: str
@@ -312,12 +337,18 @@ class WebJob:
     token: CancellationToken = field(default_factory=CancellationToken, repr=False)
     events: list[dict[str, Any]] = field(default_factory=list, repr=False)
     condition: threading.Condition = field(default_factory=threading.Condition, repr=False)
+    persist_callback: Callable[["WebJob"], None] | None = field(default=None, repr=False)
+
+    def _persist(self) -> None:
+        if self.persist_callback is not None:
+            self.persist_callback(self)
 
     def add_event(self, event_type: str, data: dict[str, Any]) -> None:
         with self.condition:
             event = {"id": len(self.events) + 1, "type": event_type, "data": data}
             self.events.append(event)
             self.condition.notify_all()
+        self._persist()
 
     def set_status(
         self,
@@ -338,6 +369,7 @@ class WebJob:
             event = {"id": len(self.events) + 1, "type": "job", "data": snapshot}
             self.events.append(event)
             self.condition.notify_all()
+        self._persist()
 
     def on_progress(self, event: ProgressEvent) -> None:
         payload = event.as_dict()
@@ -346,6 +378,7 @@ class WebJob:
             next_event = {"id": len(self.events) + 1, "type": "progress", "data": payload}
             self.events.append(next_event)
             self.condition.notify_all()
+        self._persist()
 
     def as_dict(self) -> dict[str, Any]:
         artifacts = {
@@ -394,28 +427,51 @@ class JobManager:
         base_dir: str | Path,
         *,
         pipeline_runner: Callable[..., PipelineResult] = run_pipeline,
+        results_root: str | Path | None = None,
+        allow_local_sources: bool = True,
     ) -> None:
         self.base_dir = Path(base_dir).resolve()
         self.workspace_root = self.base_dir / ".papermatrix"
+        configured_results_root = Path(results_root).expanduser() if results_root else self.base_dir / DEFAULT_RESULTS_DIR_NAME
+        if not configured_results_root.is_absolute():
+            configured_results_root = self.base_dir / configured_results_root
+        self.results_root = configured_results_root.resolve()
+        self.allow_local_sources = allow_local_sources
+        self.records_dir = self.workspace_root / "jobs"
         self.pipeline_runner = pipeline_runner
         self._jobs: dict[str, WebJob] = {}
         self._lock = threading.Lock()
+        self._records_lock = threading.Lock()
+        self._restore_jobs()
 
     def project_dir(self, project_id: str) -> Path:
         return resolve_project_dir(self.workspace_root, project_id)
 
     def results_dir(self, requested_dir: str | Path | None = None) -> Path:
-        """Resolve the user-visible results directory without changing the cache workspace."""
+        """Resolve a user-selected results subdirectory inside results_root."""
         if requested_dir is None or not str(requested_dir).strip():
-            directory = self.base_dir / DEFAULT_RESULTS_DIR_NAME
+            directory = self.results_root
         else:
             directory = Path(requested_dir).expanduser()
             if not directory.is_absolute():
-                directory = self.base_dir / directory
+                directory = self.results_root / directory
         directory = directory.resolve()
+        if not _is_path_within(directory, self.results_root):
+            raise ValueError("results_dir must stay inside the configured results root")
         if directory.exists() and not directory.is_dir():
             raise ValueError("results_dir must be a directory")
         return directory
+
+    def validate_user_sources(self, sources: tuple[str, ...]) -> None:
+        if self.allow_local_sources:
+            return
+        from .source import source_type
+
+        if any(source_type(source) == "local" for source in sources):
+            raise ValueError("server mode accepts uploads, arXiv, DOI, and HTTP(S) PDF URLs, not server-local paths")
+
+    def pdf_path_is_allowed(self, job: WebJob, path: Path) -> bool:
+        return self.allow_local_sources or _is_path_within(path, self.project_dir(job.spec.project_id))
 
     def is_project_active(self, project_id: str) -> bool:
         with self._lock:
@@ -426,7 +482,7 @@ class JobManager:
         with self._lock:
             if any(job.spec.project_id == spec.project_id and job.status in ACTIVE_STATUSES for job in self._jobs.values()):
                 raise JobConflictError(f'project "{spec.project_id}" already has an active job')
-            job = WebJob(id=uuid.uuid4().hex, spec=spec)
+            job = WebJob(id=uuid.uuid4().hex, spec=spec, persist_callback=self._persist_job)
             self._jobs[job.id] = job
         job.add_event("job", job.as_dict())
         thread = threading.Thread(target=self._execute, args=(job,), name=f"papermatrix-{job.id[:8]}", daemon=True)
@@ -454,6 +510,7 @@ class JobManager:
             event = {"id": len(job.events) + 1, "type": "job", "data": job.as_dict()}
             job.events.append(event)
             job.condition.notify_all()
+        job._persist()
         return job
 
     def retry(self, job_id: str) -> WebJob:
@@ -540,6 +597,82 @@ class JobManager:
             else:
                 detail = _classify_service_error(exc, secret=job.spec.api_key)
                 job.set_status("failed", error=detail["message"], error_detail=detail)
+
+    def _record_path(self, job_id: str) -> Path:
+        return self.records_dir / f"{job_id}.json"
+
+    def _persist_job(self, job: WebJob) -> None:
+        record = {
+            "version": JOB_RECORD_VERSION,
+            "id": job.id,
+            "spec": {
+                "project_id": job.spec.project_id,
+                "language": job.spec.language,
+                "retries": job.spec.retries,
+                "results_dir": str(job.spec.results_dir) if job.spec.results_dir else None,
+                "retry_report": str(job.spec.retry_report) if job.spec.retry_report else None,
+            },
+            "status": job.status,
+            "created_at": job.created_at,
+            "started_at": job.started_at,
+            "finished_at": job.finished_at,
+            "latest_progress": job.latest_progress,
+            "summary": job.summary,
+            "error": job.error,
+            "error_detail": job.error_detail,
+            "artifacts": {name: str(path) for name, path in job.artifacts.items()},
+            "run_report_path": str(job.run_report_path) if job.run_report_path else None,
+        }
+        with self._records_lock:
+            self.records_dir.mkdir(parents=True, exist_ok=True)
+            destination = self._record_path(job.id)
+            temporary = destination.with_suffix(".tmp")
+            temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(destination)
+
+    def _restore_jobs(self) -> None:
+        if not self.records_dir.is_dir():
+            return
+        for record_path in self.records_dir.glob("*.json"):
+            try:
+                record = json.loads(record_path.read_text(encoding="utf-8"))
+                if record.get("version") != JOB_RECORD_VERSION:
+                    continue
+                spec_data = record["spec"]
+                project_id = str(spec_data["project_id"])
+                self.project_dir(project_id)
+                results_dir = self.results_dir(spec_data.get("results_dir"))
+                retry_report = spec_data.get("retry_report")
+                job = WebJob(
+                    id=str(record["id"]),
+                    spec=JobSpec(
+                        project_id=project_id,
+                        language=str(spec_data.get("language") or "zh"),
+                        retries=int(spec_data.get("retries") or 2),
+                        results_dir=results_dir,
+                        retry_report=Path(retry_report) if retry_report else None,
+                    ),
+                    status=str(record.get("status") or "failed"),
+                    created_at=str(record.get("created_at") or _now()),
+                    started_at=record.get("started_at"),
+                    finished_at=record.get("finished_at"),
+                    latest_progress=record.get("latest_progress"),
+                    summary=dict(record.get("summary") or {}),
+                    error=record.get("error"),
+                    error_detail=record.get("error_detail"),
+                    artifacts={name: Path(path) for name, path in dict(record.get("artifacts") or {}).items()},
+                    run_report_path=Path(record["run_report_path"]) if record.get("run_report_path") else None,
+                    persist_callback=self._persist_job,
+                )
+                if job.status in ACTIVE_STATUSES:
+                    job.status = "failed"
+                    job.finished_at = _now()
+                    job.error = "服务在任务执行期间重启，任务未完成。"
+                    job.error_detail = _classify_service_error(job.error)
+                self._jobs[job.id] = job
+                self._persist_job(job)
+            except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+                continue
 
     def _prepare_pipeline(self, job: WebJob) -> dict[str, Any]:
         spec = job.spec
@@ -851,23 +984,76 @@ def _history_markdown_path(results_dir: Path, relative_path: str) -> Path:
     return path
 
 
-def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None = None):
+def create_app(
+    base_dir: str | Path | None = None,
+    *,
+    manager: JobManager | None = None,
+    root_path: str | None = None,
+    auth_token: str | None = None,
+    allow_local_sources: bool | None = None,
+):
     if FastAPI is None:  # pragma: no cover - exercised only without the optional dependency
         raise RuntimeError('Web UI dependencies are missing; install them with pip install -e ".[web]"')
 
     root = Path(base_dir or Path.cwd()).resolve()
-    job_manager = manager or JobManager(root)
-    app = FastAPI(title="PaperMatrix Web", version="0.1.0")
+    configured_auth_token = auth_token if auth_token is not None else os.getenv("PAPERMATRIX_WEB_AUTH_TOKEN", "").strip()
+    configured_results_root = os.getenv("PAPERMATRIX_RESULTS_ROOT") or None
+    configured_allow_local_sources = (
+        allow_local_sources
+        if allow_local_sources is not None
+        else _env_flag("PAPERMATRIX_ALLOW_LOCAL_SOURCES", default=not bool(configured_auth_token))
+    )
+    job_manager = manager or JobManager(
+        root,
+        results_root=configured_results_root,
+        allow_local_sources=configured_allow_local_sources,
+    )
+    normalized_root_path = _normalize_root_path(root_path or os.getenv("PAPERMATRIX_ROOT_PATH"))
+    app = FastAPI(title="PaperMatrix Web", version="0.1.0", root_path=normalized_root_path)
     app.state.job_manager = job_manager
+    app.state.auth_enabled = bool(configured_auth_token)
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
+    @app.middleware("http")
+    async def require_session(request: Request, call_next):
+        path = request.url.path
+        if configured_auth_token and path.startswith("/api/") and path not in {"/api/health", "/api/session"}:
+            session_token = request.cookies.get(SESSION_COOKIE_NAME, "")
+            if not secrets.compare_digest(session_token, configured_auth_token):
+                return JSONResponse({"detail": "Authentication required"}, status_code=401)
+        return await call_next(request)
 
     @app.get("/", response_class=HTMLResponse)
     def index():
         return HTMLResponse((ASSETS_DIR / "index.html").read_text(encoding="utf-8"))
 
     @app.get("/api/health")
-    def health():
-        return {"status": "ok"}
+    def health(request: Request):
+        authenticated = not configured_auth_token or secrets.compare_digest(
+            request.cookies.get(SESSION_COOKIE_NAME, ""), configured_auth_token
+        )
+        return {
+            "status": "ok",
+            "authentication_required": bool(configured_auth_token),
+            "authenticated": authenticated,
+        }
+
+    @app.post("/api/session")
+    async def create_session(access_token: str = Form("")):
+        if not configured_auth_token:
+            return {"ok": True, "authentication_required": False}
+        if not secrets.compare_digest(access_token, configured_auth_token):
+            raise HTTPException(status_code=401, detail="Invalid access token")
+        response = JSONResponse({"ok": True, "authentication_required": True})
+        response.set_cookie(
+            SESSION_COOKIE_NAME,
+            configured_auth_token,
+            httponly=True,
+            samesite="strict",
+            secure=_env_flag("PAPERMATRIX_WEB_SECURE_COOKIE", default=True),
+            max_age=8 * 60 * 60,
+        )
+        return response
 
     @app.get("/api/config")
     def config():
@@ -882,7 +1068,9 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
                 "max_chars": 3500,
                 "max_chunks": 12,
                 "retries": 2,
-                "results_dir": str(job_manager.results_dir()),
+                "results_dir": str(job_manager.results_root),
+                "results_root": str(job_manager.results_root),
+                "allow_local_sources": job_manager.allow_local_sources,
             },
         }
 
@@ -1003,6 +1191,7 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
         try:
             project_dir = job_manager.project_dir(normalized_project_id)
             normalized_results_dir = job_manager.results_dir(results_dir)
+            job_manager.validate_user_sources(source_lines)
             if job_manager.is_project_active(normalized_project_id):
                 raise JobConflictError(f'project "{normalized_project_id}" already has an active job')
             if not 1 <= max_chars <= 100_000:
@@ -1148,11 +1337,14 @@ def create_app(base_dir: str | Path | None = None, *, manager: JobManager | None
     @app.get("/api/jobs/{job_id}/papers/{paper_id}/pdf")
     def paper_pdf(job_id: str, paper_id: str):
         try:
-            path = _job_pdf_path(job_manager.get(job_id), paper_id)
+            job = job_manager.get(job_id)
+            path = _job_pdf_path(job, paper_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if not job_manager.pdf_path_is_allowed(job, path):
+            raise HTTPException(status_code=403, detail="PDF is outside the job workspace")
         return FileResponse(
             path,
             media_type="application/pdf",
@@ -1180,16 +1372,18 @@ def serve(
     port: int = 8765,
     open_browser: bool = True,
     base_dir: str | Path | None = None,
+    root_path: str = "",
 ) -> None:
     try:
         import uvicorn
     except ImportError as exc:  # pragma: no cover - exercised only without the optional dependency
         raise RuntimeError('Web UI dependencies are missing; install them with pip install -e ".[web]"') from exc
 
-    url = f"http://{host}:{port}"
+    normalized_root_path = _normalize_root_path(root_path or os.getenv("PAPERMATRIX_ROOT_PATH"))
+    url = f"http://{host}:{port}{normalized_root_path}/"
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
-    uvicorn.run(create_app(base_dir), host=host, port=port, log_level="info")
+    uvicorn.run(create_app(base_dir, root_path=normalized_root_path), host=host, port=port, log_level="info")
 
 
 def main() -> None:

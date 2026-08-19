@@ -61,6 +61,26 @@ async function api(url, options = {}) {
   return payload;
 }
 
+async function authorizeWorkspace() {
+  const token = $("#access-token").value;
+  if (!token) {
+    $("#access-status").textContent = "请输入工作台访问令牌。";
+    return;
+  }
+  try {
+    await api("/api/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ access_token: token })
+    });
+    $("#access-token").value = "";
+    $("#access-status").textContent = "访问令牌已验证。";
+    await bootstrap();
+  } catch (error) {
+    $("#access-status").textContent = error.message || "访问令牌无效。";
+  }
+}
+
 function showError(target, error) {
   target.replaceChildren();
   if (!error) {
@@ -667,7 +687,12 @@ async function retryCurrent() {
 
 async function bootstrap() {
   try {
-    await Promise.all([loadConfig(), loadJobs(), api("/api/health")]);
+    const health = await api("/api/health");
+    if (health.authentication_required && !health.authenticated) {
+      showError($("#form-error"), "此服务器需要工作台访问令牌，请在“模型与高级设置”中填写后连接。");
+      return;
+    }
+    await Promise.all([loadConfig(), loadJobs()]);
     await loadHistory();
   } catch (error) {
     const health = $("[data-testid='health']");
@@ -685,6 +710,7 @@ function bindUi() {
   $("#preset").addEventListener("change", toggleCustomFields);
   $("#model").addEventListener("input", updateReasoningAvailability);
   $("#test-provider").addEventListener("click", testProvider);
+  $("#connect-access").addEventListener("click", authorizeWorkspace);
   $("#cancel-job").addEventListener("click", cancelCurrent);
   $("#retry-job").addEventListener("click", retryCurrent);
   $("#refresh-history").addEventListener("click", loadHistory);
