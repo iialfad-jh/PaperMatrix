@@ -219,6 +219,20 @@
           <button id="refresh-history" class="secondary" type="button">刷新列表</button>
         </div>
         <p id="history-folder" class="muted"></p>
+        <div class="history-tools">
+          <label class="history-search" for="history-search">
+            <span>搜索历史</span>
+            <input id="history-search" type="search" placeholder="按文件名或路径搜索" autocomplete="off">
+          </label>
+          <label class="history-sort" for="history-sort">
+            <span>排序</span>
+            <select id="history-sort">
+              <option value="modified_desc">最近修改</option>
+              <option value="modified_asc">最早修改</option>
+              <option value="name_asc">文件名</option>
+            </select>
+          </label>
+        </div>
         <div id="history-list" class="history-list"><p class="muted">正在读取结果文件夹...</p></div>
         <section id="history-preview" class="history-preview hidden" aria-labelledby="history-preview-title">
           <div class="history-preview-heading">

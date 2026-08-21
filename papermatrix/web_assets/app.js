@@ -11,7 +11,8 @@ const state = {
   evidenceIndex: 0,
   pdfPage: 1,
   evidenceRequest: 0,
-  historyRefreshForJobId: null
+  historyRefreshForJobId: null,
+  historyFiles: []
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -344,10 +345,25 @@ function historyUrl(path = "") {
 
 function renderHistory(history) {
   $("#history-folder").textContent = history.exists ? `结果文件夹：${history.results_dir}` : `结果文件夹尚未创建：${history.results_dir}`;
+  state.historyFiles = Array.isArray(history.files) ? history.files : [];
+  renderHistoryFiles();
+}
+
+function renderHistoryFiles() {
   const list = $("#history-list");
-  const files = history.files || [];
+  const query = $("#history-search").value.trim().toLocaleLowerCase();
+  const sort = $("#history-sort").value;
+  const files = state.historyFiles
+    .filter((file) => !query || `${file.name} ${file.path}`.toLocaleLowerCase().includes(query))
+    .sort((left, right) => {
+      if (sort === "name_asc") return String(left.path).localeCompare(String(right.path), "zh-CN");
+      const direction = sort === "modified_asc" ? 1 : -1;
+      return direction * (new Date(left.modified_at).getTime() - new Date(right.modified_at).getTime());
+    });
   if (!files.length) {
-    list.innerHTML = '<p class="muted">此文件夹中还没有 Markdown 结果。</p>';
+    list.innerHTML = state.historyFiles.length
+      ? '<p class="muted">没有匹配的历史结果。</p>'
+      : '<p class="muted">此文件夹中还没有 Markdown 结果。</p>';
     return;
   }
   list.innerHTML = files.map((file) => `<button type="button" class="history-file" data-history-path="${escapeHtml(file.path)}"><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.path)} · ${escapeHtml(new Date(file.modified_at).toLocaleString())}</small></button>`).join("");
@@ -714,6 +730,8 @@ function bindUi() {
   $("#cancel-job").addEventListener("click", cancelCurrent);
   $("#retry-job").addEventListener("click", retryCurrent);
   $("#refresh-history").addEventListener("click", loadHistory);
+  $("#history-search").addEventListener("input", renderHistoryFiles);
+  $("#history-sort").addEventListener("change", renderHistoryFiles);
   $("#results-dir").addEventListener("change", () => { saveSettings(); loadHistory(); });
   $("#show-all-fields").addEventListener("click", showAllFields);
   $("#matrix-preview").addEventListener("click", (event) => {
@@ -753,6 +771,8 @@ if (typeof window !== "undefined") {
     closeEvidenceInspector,
     loadHistory,
     openHistory,
+    renderHistory,
+    renderHistoryFiles,
     settingsStorageKey
   };
 }

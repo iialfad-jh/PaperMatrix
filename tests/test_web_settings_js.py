@@ -287,3 +287,31 @@ def test_matrix_preview_renders_field_comparison_safely(tmp_path: Path):
         assert.match(evidenceMarkup, /class="matrix-evidence-cell"/);
         """,
     )
+
+
+def test_history_search_and_sort_filter_results(tmp_path: Path):
+    run_settings_script(
+        tmp_path,
+        """
+        PaperMatrixWeb.renderHistory({
+          exists: true,
+          results_dir: "/tmp/results",
+          files: [
+            {name: "matrix.md", path: "alpha/matrix.md", modified_at: "2026-08-20T00:00:00Z"},
+            {name: "matrix.evidence.md", path: "beta/matrix.evidence.md", modified_at: "2026-08-21T00:00:00Z"}
+          ]
+        });
+        assert.ok(element("#history-list").innerHTML.includes("alpha/matrix.md"));
+        assert.ok(element("#history-list").innerHTML.includes("beta/matrix.evidence.md"));
+
+        element("#history-search").value = "evidence";
+        PaperMatrixWeb.renderHistoryFiles();
+        assert.ok(!element("#history-list").innerHTML.includes("alpha/matrix.md"));
+        assert.ok(element("#history-list").innerHTML.includes("beta/matrix.evidence.md"));
+
+        element("#history-search").value = "";
+        element("#history-sort").value = "name_asc";
+        PaperMatrixWeb.renderHistoryFiles();
+        assert.ok(element("#history-list").innerHTML.indexOf("alpha/matrix.md") < element("#history-list").innerHTML.indexOf("beta/matrix.evidence.md"));
+        """,
+    )

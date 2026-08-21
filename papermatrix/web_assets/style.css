@@ -230,6 +230,12 @@ summary { padding: 14px 2px; color: var(--muted); font-size: 12px; font-weight: 
 .recent-job small { color: var(--muted); grid-column: 1 / -1; }
 .recent-job .mini-status { color: var(--teal); font-size: 10px; font-weight: 800; text-transform: uppercase; }
 .history-folder { overflow-wrap: anywhere; }
+.history-tools { display: flex; align-items: end; gap: 12px; margin-top: 14px; }
+.history-search, .history-sort { display: grid; gap: 5px; margin: 0; color: var(--muted); font-size: 10px; font-weight: 750; }
+.history-search { flex: 1; }
+.history-search input, .history-sort select { min-height: 34px; margin: 0; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: #fff; font: inherit; }
+.history-search input { width: 100%; padding: 7px 10px; }
+.history-sort select { min-width: 120px; padding: 7px 8px; }
 .history-list { display: grid; gap: 8px; margin-top: 14px; }
 .history-file { display: grid; gap: 4px; width: 100%; padding: 11px 13px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: rgba(255,255,255,.64); text-align: left; }
 .history-file:hover { border-color: var(--teal); color: var(--teal); }
@@ -260,6 +266,8 @@ footer { height: 70px; display: flex; justify-content: space-between; align-item
   .field-grid, .field-grid.three { grid-template-columns: 1fr; gap: 0; }
   .recent-jobs { grid-template-columns: 1fr; }
   .panel-heading p, .recent-heading p { display: none; }
+  .history-tools { align-items: stretch; flex-direction: column; }
+  .history-sort select { width: 100%; }
   .result-heading { align-items: flex-start; flex-wrap: wrap; }
   .result-heading > div:first-child { flex: 1 1 130px; }
   .result-tools { width: 100%; align-items: flex-start; flex-direction: column; gap: 8px; }
