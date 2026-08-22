@@ -390,6 +390,25 @@ async function openHistory(path) {
   }
 }
 
+async function copyHistoryMarkdown() {
+  const content = $("#history-markdown").textContent || "";
+  const status = $("#history-copy-status");
+  if (!content) {
+    status.textContent = "当前没有可复制的 Markdown。";
+    return;
+  }
+  if (!navigator.clipboard?.writeText) {
+    status.textContent = "当前浏览器不支持自动复制，请手动选择文本。";
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(content);
+    status.textContent = "Markdown 已复制。";
+  } catch (_) {
+    status.textContent = "复制失败，请确认浏览器允许剪贴板访问。";
+  }
+}
+
 async function loadPreview(jobId) {
   try {
     const preview = await api(`/api/jobs/${jobId}/preview`);
@@ -757,6 +776,7 @@ function bindUi() {
     const button = event.target.closest("[data-history-path]");
     if (button) openHistory(button.dataset.historyPath);
   });
+  $("#copy-history-markdown").addEventListener("click", copyHistoryMarkdown);
 }
 
 if (typeof window !== "undefined") {
@@ -771,6 +791,7 @@ if (typeof window !== "undefined") {
     closeEvidenceInspector,
     loadHistory,
     openHistory,
+    copyHistoryMarkdown,
     renderHistory,
     renderHistoryFiles,
     settingsStorageKey

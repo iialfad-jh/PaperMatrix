@@ -237,8 +237,12 @@
         <section id="history-preview" class="history-preview hidden" aria-labelledby="history-preview-title">
           <div class="history-preview-heading">
             <h3 id="history-preview-title">Markdown 预览</h3>
-            <span id="history-preview-path" class="muted"></span>
+            <div class="history-preview-actions">
+              <span id="history-preview-path" class="muted"></span>
+              <button id="copy-history-markdown" class="secondary" type="button" title="复制 Markdown">复制 Markdown</button>
+            </div>
           </div>
+          <p id="history-copy-status" class="hint" role="status" aria-live="polite"></p>
           <pre id="history-markdown"></pre>
         </section>
       </section>

@@ -242,6 +242,8 @@ summary { padding: 14px 2px; color: var(--muted); font-size: 12px; font-weight: 
 .history-file small { overflow-wrap: anywhere; color: var(--muted); font-size: 10px; }
 .history-preview { margin-top: 16px; border-top: 1px solid var(--line); }
 .history-preview-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 14px 0 9px; }
+.history-preview-actions { display: flex; align-items: center; gap: 10px; }
+.history-preview-actions .secondary { min-height: 30px; padding: 6px 9px; }
 .history-preview h3 { margin: 0; font-size: 13px; }
 .history-preview pre { max-height: 460px; overflow: auto; margin: 0; padding: 14px; border: 1px solid var(--line); white-space: pre-wrap; color: #33494d; background: #f0eee8; font: 11px/1.65 ui-monospace, monospace; }
 .muted { color: var(--muted); font-size: 12px; }

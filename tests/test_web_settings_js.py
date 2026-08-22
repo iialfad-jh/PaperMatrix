@@ -106,7 +106,7 @@ def run_settings_script(tmp_path: Path, scenario: str) -> None:
               "#test-provider", "#cancel-job", "#retry-job", "#recent-jobs", "#form-error",
               "#provider-probe-status", "#matrix-preview", "#result-summary", "#field-visibility",
               "#field-toggles", "#show-all-fields", "#history-folder", "#history-list", "#history-preview",
-              "#history-preview-path", "#history-markdown", "#refresh-history", "[data-testid='health']"
+              "#history-preview-path", "#history-markdown", "#refresh-history", "#copy-history-markdown", "#history-copy-status", "[data-testid='health']"
             ].forEach((selector) => element(selector));
 
             const storage = {
@@ -129,6 +129,7 @@ def run_settings_script(tmp_path: Path, scenario: str) -> None:
             const window = {};
             const context = {
               console, assert, setTimeout, clearTimeout, document, window,
+              navigator: { clipboard: { writeText: async (value) => { context.copiedText = value; } } },
               localStorage: storage,
               EventSource: class {},
               FormData: class { set() {} },
@@ -313,5 +314,17 @@ def test_history_search_and_sort_filter_results(tmp_path: Path):
         element("#history-sort").value = "name_asc";
         PaperMatrixWeb.renderHistoryFiles();
         assert.ok(element("#history-list").innerHTML.indexOf("alpha/matrix.md") < element("#history-list").innerHTML.indexOf("beta/matrix.evidence.md"));
+        """,
+    )
+
+
+def test_history_markdown_can_be_copied(tmp_path: Path):
+    run_settings_script(
+        tmp_path,
+        """
+        element("#history-markdown").textContent = "# Copied result\\n";
+        await PaperMatrixWeb.copyHistoryMarkdown();
+        assert.equal(context.copiedText, "# Copied result\\n");
+        assert.equal(element("#history-copy-status").textContent, "Markdown 已复制。");
         """,
     )
